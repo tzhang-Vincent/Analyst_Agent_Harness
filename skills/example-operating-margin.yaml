@@ -1,0 +1,10 @@
+# Example user-defined skill. Drop YAML files like this into skills/ to teach
+# the agent a new analysis recipe. Loaded automatically at startup.
+name: operating-margin-trend
+description: Track operating margin (operating income / revenue) over recent quarters.
+metrics:
+  - revenue
+  - operating_income
+frequency: quarterly
+n_periods: 4
+output_template: Table of revenue, operating income and operating margin % by quarter.
