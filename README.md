@@ -42,6 +42,16 @@ export ANTHROPIC_API_KEY=...
 .venv/bin/agent "summarize NVDA's revenue trend"        # now uses the LLM for prose
 ```
 
+DeepSeek exposes an **Anthropic-compatible endpoint**, so `provider=anthropic`
+can drive it directly by pointing `LLM_BASE_URL` there:
+
+```bash
+export LLM_PROVIDER=anthropic
+export LLM_MODEL=deepseek-v4-pro
+export LLM_BASE_URL=https://api.deepseek.com/anthropic
+export ANTHROPIC_API_KEY=<deepseek-key>
+```
+
 The deterministic mode is the default safety path: it needs no key and cannot
 hallucinate. `--no-llm` forces it explicitly.
 
@@ -111,7 +121,14 @@ cross-company, single-metric, and annual queries:
 |---|---|
 | Harness value accuracy vs. EDGAR oracle | **100%** (15/15 questions) |
 | Harness provenance coverage | **100%** |
-| Bare-LLM baseline accuracy | *run with a key to measure* |
+| Bare-LLM baseline accuracy | **10%** (same model, no harness) |
+
+Measured with `deepseek-v4-pro` (served via its Anthropic-compatible endpoint):
+the harness is 100% accurate with full provenance, while the *same model*
+answering from memory with no tools hits 10% — a 10× gap that is the whole point
+of the harness. The baseline metric is strict: it checks exact per-quarter
+figures within 1%, so a model that says "around $100B" scores 0 — analysts need
+exact, traceable numbers, not approximations.
 
 ```bash
 .venv/bin/python -m eval.run_eval              # harness accuracy + provenance

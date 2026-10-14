@@ -19,6 +19,10 @@ import json
 import os
 from typing import Any
 
+from dotenv import load_dotenv
+
+load_dotenv()  # pick up .env (API keys, provider, model, base URL) if present
+
 PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic")
 MODEL = os.environ.get("LLM_MODEL", "deepseek-v4-pro")
 BASE_URL = os.environ.get("LLM_BASE_URL", "")
