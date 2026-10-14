@@ -21,7 +21,7 @@ import re
 from .edgar import EdgarClient
 from .extractor import extract_metrics
 from .llm import LLM
-from .metrics import ALIASES, canonical_metric, metric_label
+from .metrics import ALIASES, metric_label
 from .profile import Memory
 from .schema import Answer, Fact, QueryIntent
 from .skills import Skill, load_all, match_skill

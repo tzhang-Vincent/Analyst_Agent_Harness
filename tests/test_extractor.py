@@ -189,6 +189,33 @@ def test_yearly_cumulative_facts_excluded():
     assert [f.provenance.value for f in facts] == [100]
 
 
+def test_instant_balance_sheet_metric():
+    # Balance-sheet items are point-in-time (start is None). Quarterly should
+    # include the Q1-Q3 10-Q instants plus the fiscal-year-end instant as Q4.
+    data = {
+        "entityName": "NVIDIA CORP",
+        "facts": {
+            "us-gaap": {
+                "Assets": {
+                    "label": "Assets",
+                    "units": {
+                        "USD": [
+                            {"start": None, "end": "2026-01-25", "val": 260000000000, "frame": "CY2025I", "filed": "2026-02-25", "accn": "b3", "fy": 2026, "fp": "FY", "form": "10-K"},
+                            {"start": None, "end": "2026-04-26", "val": 259474000000, "frame": "CY2026Q1I", "filed": "2026-05-20", "accn": "b4", "fy": 2027, "fp": "Q1", "form": "10-Q"},
+                            {"start": None, "end": "2026-07-26", "val": 320272000000, "frame": "CY2026Q2I", "filed": "2026-08-26", "accn": "b5", "fy": 2027, "fp": "Q2", "form": "10-Q"},
+                            {"start": None, "end": "2026-10-26", "val": 330000000000, "frame": "CY2026Q3I", "filed": "2026-11-20", "accn": "b6", "fy": 2027, "fp": "Q3", "form": "10-Q"},
+                        ]
+                    },
+                }
+            }
+        },
+    }
+    client = FakeClient("0001045810", data)
+    facts = extract_metric(client, "NVDA", "total_assets", frequency="quarterly", n=4)
+    assert [f.period for f in facts] == ["2026-01-25", "2026-04-26", "2026-07-26", "2026-10-26"]
+    assert [f.period_label for f in facts] == ["Q4 FY2026", "Q1 FY2027", "Q2 FY2027", "Q3 FY2027"]
+
+
 def test_unknown_metric_raises():
     client = FakeClient("0001045810", REVENUE_FACTS)
     with pytest.raises(ValueError):

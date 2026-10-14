@@ -13,7 +13,7 @@ from typing import Any
 
 
 class MetricSpec:
-    __slots__ = ("key", "label", "statement", "tags", "unit_pref")
+    __slots__ = ("key", "label", "statement", "tags", "unit_pref", "kind")
 
     def __init__(
         self,
@@ -22,6 +22,7 @@ class MetricSpec:
         statement: str,
         tags: list[str],
         unit_pref: list[str] | None = None,
+        kind: str = "duration",
     ) -> None:
         self.key = key
         self.label = label
@@ -29,6 +30,9 @@ class MetricSpec:
         self.tags = tags
         # Preferred SEC unit(s), in order. Monetary metrics default to USD.
         self.unit_pref = unit_pref or ["USD", "shares"]
+        # "duration" = flow over a period (income/cash flow); "instant" =
+        # point-in-time balance (balance sheet items have start == end == None).
+        self.kind = kind
 
 
 # key -> spec. Tag order matters: primary first, synonyms after.
@@ -79,18 +83,21 @@ METRICS: dict[str, MetricSpec] = {
         "Total Assets",
         "balance_sheet",
         ["Assets"],
+        kind="instant",
     ),
     "total_liabilities": MetricSpec(
         "total_liabilities",
         "Total Liabilities",
         "balance_sheet",
         ["Liabilities"],
+        kind="instant",
     ),
     "cash": MetricSpec(
         "cash",
         "Cash & Equivalents",
         "balance_sheet",
         ["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"],
+        kind="instant",
     ),
     "operating_cash_flow": MetricSpec(
         "operating_cash_flow",

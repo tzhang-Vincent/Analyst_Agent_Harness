@@ -4,15 +4,16 @@ XBRL ``frame`` labels are calendar-based and mislabel fiscal quarters for
 companies whose fiscal year does not end in December, and ``companyfacts``
 contains cumulative (YTD) facts and duplicated facts for the same period.
 So instead of trusting ``frame`` (or the filing's ``fy`` year, which drifts
-across restatements) we use the fact's actual duration and dates:
+across restatements) we use the fact's actual dates:
 
-1. **Duration filter** — a quarter is ~13 weeks, a fiscal year ~52 weeks.
-   This drops cumulative YTD facts (6mo/9mo) and point-in-time balances.
-2. **Dedupe by (start, end)** keeping the *latest-filed* fact, which absorbs
-   restatements made in a later 10-K and duplicate filings for one period.
-3. **Order by ``end`` date** — the one unambiguous chronological anchor.
-4. **Label** — quarter number from ``fp``, fiscal *year* inferred from the end
-   date and the company's fiscal year-end month (inferred from annual facts).
+- **Duration metrics** (income statement, cash flow) are flows over a period:
+  filter by duration (~13 weeks = quarter, ~52 weeks = year) to drop YTD and
+  point-in-time facts.
+- **Instant metrics** (balance sheet) are point-in-time (``start`` is None):
+  classify by the filing's ``fp`` (Q1-Q4 vs FY) instead.
+
+Both paths dedupe by period keeping the *latest-filed* fact (restatements),
+order by ``end`` date, and label from ``fp`` + an inferred fiscal year-end month.
 """
 
 from __future__ import annotations
@@ -48,11 +49,11 @@ def _facts_for_tag(tag_node: dict, unit_pref: list[str]) -> list[tuple[dict, str
     return []
 
 
-def _dedupe(
+def _dedupe_duration(
     facts_with_units: list[tuple[dict, str]], days_range: tuple[int, int]
-) -> dict[tuple[str, str], dict]:
-    """Collapse to one fact per (start, end) period, keeping the latest-filed."""
-    best: dict[tuple[str, str], dict] = {}
+) -> dict[tuple[str | None, str], dict]:
+    """Collapse duration facts to one per (start, end), latest-filed wins."""
+    best: dict[tuple[str | None, str], dict] = {}
     for fact, unit in facts_with_units:
         start, end = fact.get("start"), fact.get("end")
         if not start or not end:
@@ -66,22 +67,48 @@ def _dedupe(
     return best
 
 
-def _infer_fy_end_month(tags_node: dict, spec: MetricSpec) -> int:
-    """Infer the company's fiscal year-end month from its annual facts.
+def _dedupe_instant(
+    facts_with_units: list[tuple[dict, str]], frequency: str
+) -> dict[tuple[str | None, str], dict]:
+    """Collapse instant (point-in-time) facts to one per end date, latest-filed wins."""
+    best: dict[tuple[str | None, str], dict] = {}
+    for fact, unit in facts_with_units:
+        end = fact.get("end")
+        if not end:
+            continue
+        fp = fact.get("fp")
+        if frequency == "quarterly":
+            # Q1-Q3 come from 10-Qs; the fiscal-year-end instant (fp == "FY")
+            # *is* the Q4 balance sheet, so include it as well.
+            if fp not in _FISCAL_QUARTERS and fp != "FY":
+                continue
+        elif fp != "FY":
+            continue
+        key = (fact.get("start"), end)
+        filed = fact.get("filed") or ""
+        if key not in best or filed > (best[key].get("filed") or ""):
+            best[key] = {**fact, "_unit": unit}
+    return best
 
-    Falls back to December (calendar) when no annual facts are present.
-    """
-    for tag in spec.tags:
-        annual = _dedupe(
-            _facts_for_tag(tags_node.get(tag, {}), spec.unit_pref), ANNUAL_DAYS
-        )
-        if annual:
-            return date.fromisoformat(max(k[1] for k in annual)).month
-    for node in tags_node.values():
-        annual = _dedupe(_facts_for_tag(node, spec.unit_pref), ANNUAL_DAYS)
-        if annual:
-            return date.fromisoformat(max(k[1] for k in annual)).month
-    return 12
+
+def _infer_fy_end_month(tags_node: dict, spec: MetricSpec) -> int:
+    """Infer the company's fiscal year-end month from any annual fact."""
+    ends: list[str] = []
+    for tag in list(spec.tags) + [t for t in tags_node if t not in spec.tags]:
+        node = tags_node.get(tag)
+        if not node:
+            continue
+        for facts in node.get("units", {}).values():
+            for f in facts:
+                end = f.get("end")
+                if not end:
+                    continue
+                start = f.get("start")
+                if f.get("fp") == "FY" or (
+                    start and ANNUAL_DAYS[0] <= _days(start, end) <= ANNUAL_DAYS[1]
+                ):
+                    ends.append(end)
+    return date.fromisoformat(max(ends)).month if ends else 12
 
 
 def _fiscal_year(end: str, fy_end_month: int) -> int:
@@ -90,14 +117,16 @@ def _fiscal_year(end: str, fy_end_month: int) -> int:
     return d.year + 1 if d.month > fy_end_month else d.year
 
 
-def _period_label(fact: dict, end: str, fy_end_month: int, frame: str | None) -> str:
+def _period_label(
+    fact: dict, end: str, fy_end_month: int, frame: str | None, frequency: str
+) -> str:
     """Human label, e.g. 'Q2 FY2026' or 'FY2026', preferring fiscal quarter."""
     fp = fact.get("fp")
     fy = _fiscal_year(end, fy_end_month)
     if fp in _FISCAL_QUARTERS:
         return f"{fp} FY{fy}"
     if fp == "FY":
-        return f"FY{fy}"
+        return f"Q4 FY{fy}" if frequency == "quarterly" else f"FY{fy}"
     if frame:
         return frame
     return f"ended {end}"
@@ -121,7 +150,12 @@ def extract_metric(
     if spec is None:
         raise ValueError(f"Unknown metric key: {metric_key}")
 
-    days_range = QUARTER_DAYS if frequency == "quarterly" else ANNUAL_DAYS
+    if spec.kind == "instant":
+        filter_fn = lambda facts: _dedupe_instant(facts, frequency)
+    else:
+        days_range = QUARTER_DAYS if frequency == "quarterly" else ANNUAL_DAYS
+        filter_fn = lambda facts: _dedupe_duration(facts, days_range)
+
     cik = client.ticker_to_cik(ticker)
     company_facts = client.get_company_facts(cik)
     entity_name = company_facts.get("entityName", "")
@@ -129,13 +163,13 @@ def extract_metric(
     fy_end_month = _infer_fy_end_month(tags_node, spec)
 
     chosen_tag: str | None = None
-    chosen_best: dict[tuple[str, str], dict] = {}
+    chosen_best: dict[tuple[str | None, str], dict] = {}
     chosen_latest_end = ""
     for tag in spec.tags:
         tag_node = tags_node.get(tag)
         if not tag_node:
             continue
-        best = _dedupe(_facts_for_tag(tag_node, spec.unit_pref), days_range)
+        best = filter_fn(_facts_for_tag(tag_node, spec.unit_pref))
         if not best:
             continue
         # Prefer the tag the company is *currently* filing: the one whose most
@@ -185,7 +219,7 @@ def extract_metric(
             Fact(
                 metric=metric_key,
                 period=end,
-                period_label=_period_label(f, end, fy_end_month, frame),
+                period_label=_period_label(f, end, fy_end_month, frame, frequency),
                 provenance=prov,
             )
         )
