@@ -185,10 +185,7 @@ def extract_metric(
     keys = sorted(chosen_best.keys(), key=lambda k: k[1])
 
     if periods is not None:
-        keys = [
-            k for k in keys
-            if k[1] in periods or chosen_best[k].get("frame") in periods
-        ]
+        keys = [k for k in keys if k[1] in periods]
     else:
         keys = keys[-n:]
 

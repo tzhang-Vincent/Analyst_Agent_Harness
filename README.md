@@ -156,5 +156,9 @@ tests/          41 tests (data layer, tables, memory, skills, verifier, agent)
 - **Companies that don't file a tag.** E.g. AMD does not file a standalone
   `Liabilities` concept (only `LiabilitiesAndStockholdersEquity`); the harness
   returns "no data" rather than substitute a wrong number.
+- **Deterministic ticker parsing.** Intent parsing is rule-based for reliability;
+  it filters common English/function words and financial terms from ticker
+  candidates. Rare single-letter tickers ("V") or tickers that are also financial
+  words ("CASH", "NET") should be queried by full name or added to the watchlist.
 - **Bare-LLM baseline** requires an API key; without one, `--baseline` is a
   no-op.

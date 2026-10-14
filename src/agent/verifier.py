@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from .schema import Answer
+from .schema import Answer, Fact
 
 # Only *financial* numbers: a dollar amount, or a magnitude-suffixed amount
 # (B/M/T/K). This avoids matching quarter numbers ("Q2"), fiscal years ("2025"),
@@ -60,3 +60,24 @@ def verify(answer: Answer, tolerance_frac: float = 0.01) -> list[str]:
             issues.append(f"summary number {num:,.0f} is not backed by any fetched fact")
 
     return issues
+
+
+def sanitize_summary(
+    summary: str, facts: list[Fact], tolerance_frac: float = 0.01
+) -> str:
+    """Replace numeric claims in prose that have no backing fact with ``[unverified]``.
+
+    This actually *removes* hallucinated numbers from the text, rather than just
+    flagging them, so nothing unsupported ships to the user.
+    """
+    fact_values = {f.provenance.value for f in facts}
+
+    def _repl(match):
+        tok = match.group(0)
+        n = parse_number(tok)
+        if n is None:
+            return tok
+        supported = any(abs(n - v) <= abs(v) * tolerance_frac + 1 for v in fact_values)
+        return tok if supported else "[unverified]"
+
+    return _FIN_NUM_RE.sub(_repl, summary)

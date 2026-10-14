@@ -26,17 +26,41 @@ from .profile import Memory
 from .schema import Answer, Fact, QueryIntent
 from .skills import Skill, load_all, match_skill
 from .table import flatten, fmt_compact
-from .verifier import verify
+from .verifier import sanitize_summary, verify
 
 DEFAULT_TICKERS = {"NVDA", "AMD", "INTC", "MSFT", "AAPL", "TSM", "AVGO", "QCOM", "MU"}
 _TICKER_RE = re.compile(r"\b[A-Z]{1,5}\b")
 _PERIOD_RE = re.compile(r"last (\d+)\s*(quarters?|years?|periods?)", re.IGNORECASE)
 
+# Words that look like 1-5 letter ticker candidates in a query but are almost
+# never meant as tickers there — English function words ("and" is also a real
+# ticker) plus financial terms ("cash", "net", "flow", ...). Filtered before
+# ticker resolution.
+_STOPWORDS = {
+    # function words
+    "A", "AN", "AND", "ARE", "AS", "AT", "BE", "BY", "COMPARE", "EACH", "FOR",
+    "FROM", "HOW", "IN", "IS", "IT", "LAST", "MUCH", "NEXT", "OF", "OR",
+    "OVER", "PAST", "RECENT", "SHOW", "THAT", "THE", "THIS", "TO", "VS",
+    "WAS", "WHAT", "WHICH", "WITH",
+    # financial terms
+    "ASSETS", "CASH", "COST", "DEBT", "DILUTED", "EARNINGS", "EPS", "EQUITY",
+    "EXPENSE", "EXPENSES", "FLOW", "GROSS", "GROWTH", "INCOME", "LIABILITIES",
+    "MARGIN", "NET", "OPERATING", "OPERATIONS", "PROFIT", "RATIO", "RD",
+    "REVENUE", "SALES", "SHARES", "TOTAL",
+}
+
+# Aliases that need a negative lookahead so a short word does not also match a
+# longer phrase containing it (e.g. "cash" inside "cash flow").
+_SPECIAL_PATTERNS = {
+    "cash": r"\bcash\b(?!\s*flow)",
+}
+
 
 def _extract_metrics(query_lower: str) -> list[str]:
     found: list[str] = []
     for alias, key in ALIASES.items():
-        if alias in query_lower and key not in found:
+        pattern = _SPECIAL_PATTERNS.get(alias, r"\b" + re.escape(alias) + r"\b")
+        if re.search(pattern, query_lower) and key not in found:
             found.append(key)
     return found
 
@@ -45,6 +69,8 @@ def _resolve_tickers(candidates: list[str], client: EdgarClient | None, known: s
     """Keep candidate tokens that are real tickers (validated against SEC if possible)."""
     out: list[str] = []
     for t in candidates:
+        if t in _STOPWORDS:
+            continue
         if client is not None:
             try:
                 client.ticker_to_cik(t)
@@ -65,14 +91,16 @@ def parse_intent(
     intent = QueryIntent(raw_query=query)
 
     intent.metrics = _extract_metrics(q)
-    if "annual" in q or "yearly" in q or "fiscal year" in q or "full year" in q:
+    if re.search(r"annual|yearly|fiscal year|full year|\byears?\b", q) and not re.search(
+        r"year[\s-]over[\s-]year|\byoy\b|\by/y\b", q
+    ):
         intent.frequency = "annual"
     m = _PERIOD_RE.search(q)
     if m:
         intent.num_periods = int(m.group(1))
 
     known = set(memory.watchlist if memory else []) | DEFAULT_TICKERS
-    candidates = [t.upper() for t in _TICKER_RE.findall(query)]
+    candidates = _TICKER_RE.findall(query.upper())
     intent.tickers = _resolve_tickers(candidates, client, known)
     return intent
 
@@ -121,9 +149,11 @@ class Analyst:
 
         issues = verify(answer)
         if issues:
-            # Drop any unsupported numeric claim; a data gap beats a guess.
-            answer.summary = (
-                f"{summary}\n\n[verifier] dropped unsupported numbers:\n"
+            # Actually remove any numeric claim with no backing fact.
+            answer.summary = sanitize_summary(summary, answer.facts)
+            answer.summary += (
+                "\n\n[verifier] flagged unsupported numeric claims "
+                "(shown as [unverified]):\n"
                 + "\n".join(f"  - {i}" for i in issues)
             )
 
@@ -158,11 +188,15 @@ class Analyst:
                 if len(facts) >= 2:
                     first = facts[0]
                     idx0 = self._cite(citations, first.provenance.source_url)
-                    pct = (last.provenance.value - first.provenance.value) / first.provenance.value * 100
+                    if first.provenance.value:
+                        pct = (last.provenance.value - first.provenance.value) / first.provenance.value * 100
+                        change = f" ({pct:+.1f}%)"
+                    else:
+                        change = ""
                     lines.append(
                         f"{ticker} {label}: {fmt_compact(last.provenance.value)} in "
                         f"{last.period_label} vs {fmt_compact(first.provenance.value)} in "
-                        f"{first.period_label} ({pct:+.1f}%) [{idx0}][{idx}]"
+                        f"{first.period_label}{change} [{idx0}][{idx}]"
                     )
                 else:
                     lines.append(

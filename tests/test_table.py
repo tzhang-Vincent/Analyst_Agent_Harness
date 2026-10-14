@@ -68,7 +68,7 @@ def test_build_rows():
 
 def test_fmt_compact():
     assert fmt_compact(46743000000) == "$46.74B"
-    assert fmt_compact(2_500_000) == "$2.5M"
+    assert fmt_compact(2_500_000) == "$2.50M"
     assert fmt_compact(3_000_000_000_000) == "$3.00T"
 
 

@@ -31,7 +31,7 @@ def fmt_compact(value: float) -> str:
     if magnitude >= 1e9:
         return f"${value / 1e9:.2f}B"
     if magnitude >= 1e6:
-        return f"${value / 1e6:.1f}M"
+        return f"${value / 1e6:.2f}M"
     return f"${value:,.0f}"
 
 

@@ -1,5 +1,5 @@
 from agent.schema import Answer, Fact, Provenance
-from agent.verifier import extract_numbers, parse_number, verify
+from agent.verifier import extract_numbers, parse_number, sanitize_summary, verify
 
 
 def test_parse_number_compact():
@@ -55,6 +55,17 @@ def test_verify_flags_hallucinated_number():
     )
     issues = verify(answer)
     assert any("99" in i for i in issues)
+
+
+def test_sanitize_summary_replaces_unsupported():
+    answer = Answer(
+        summary="NVDA revenue was $46.74B and profit was $99.9B.",
+        facts=[_fact(46743000000)],
+    )
+    cleaned = sanitize_summary(answer.summary, answer.facts)
+    assert "$46.74B" in cleaned
+    assert "$99.9B" not in cleaned
+    assert "[unverified]" in cleaned
 
 
 def test_verify_flags_missing_provenance():

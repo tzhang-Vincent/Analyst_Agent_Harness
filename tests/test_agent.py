@@ -75,3 +75,44 @@ def test_run_verifies_clean_deterministic(tmp_path):
     answer = analyst.run("NVDA revenue last 2 quarters")
     # deterministic summaries only cite fact values -> verifier must be clean
     assert "[verifier]" not in answer.summary
+
+
+def test_parse_intent_lowercase_ticker():
+    intent = parse_intent("nvda revenue last 2 quarters")
+    assert intent.tickers == ["NVDA"]
+    assert intent.metrics == ["revenue"]
+
+
+def test_parse_intent_last_years_is_annual():
+    intent = parse_intent("NVDA revenue over the last 4 years")
+    assert intent.frequency == "annual"
+    assert intent.num_periods == 4
+
+
+def test_parse_intent_cash_flow_not_balance_sheet_cash():
+    intent = parse_intent("cash flow from operations for NVDA")
+    assert intent.metrics == ["operating_cash_flow"]
+    # "cash"/"flow" must not leak in as tickers
+    assert intent.tickers == ["NVDA"]
+
+
+def test_parse_intent_rd_not_substring_match():
+    # "rd" must not match inside "record" / "third"
+    intent = parse_intent("NVDA record revenue for the third quarter")
+    assert "rd_expense" not in intent.metrics
+
+
+def test_run_zero_first_value_no_crash(tmp_path):
+    data = {
+        "entityName": "CO",
+        "facts": {"us-gaap": {
+            "Revenues": {"label": "Revenues", "units": {"USD": [
+                {"start": "2023-01-01", "end": "2023-03-31", "val": 0, "frame": "CY2023Q1", "filed": "2023-05-01", "accn": "z1", "fy": 2023, "fp": "Q1", "form": "10-Q"},
+                {"start": "2023-04-01", "end": "2023-06-30", "val": 1000000, "frame": "CY2023Q2", "filed": "2023-08-01", "accn": "z2", "fy": 2023, "fp": "Q2", "form": "10-Q"},
+            ]}},
+        }},
+    }
+    client = FakeClient(data)
+    analyst = Analyst(client=client, memory=Memory(tmp_path))
+    answer = analyst.run("CO revenue")
+    assert "CO" in answer.summary  # no ZeroDivisionError
