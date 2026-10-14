@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtualenv
+.venv/
+venv/
+env/
+
+# Secrets / local config
+.env
+
+# Runtime data (cache + user memory are local, not committed)
+data/
+
+# Test / tooling artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.xlsx
+*.csv
+
+# Superpowers scratch
+.superpowers/
