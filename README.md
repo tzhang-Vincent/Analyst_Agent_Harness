@@ -112,6 +112,12 @@ sees that metric prioritized.
 claim from the answer and drops anything not backed by a fetched fact. A data
 gap produces "no data", never a guess.
 
+**6. LLM intent parsing with a deterministic safety net.** When an LLM is
+configured, it parses the question first — this handles phrasing the rule parser
+cannot ("profitability" → `net_income`). Every LLM ticker/metric is then validated
+against the SEC ticker map and the metric registry, and the deterministic rule
+parser is the fallback, so a mis-parse can never inject a wrong company or metric.
+
 ## Evaluation
 
 `eval/` measures the **full harness — the LLM wired in** (intent parsing +
