@@ -9,19 +9,21 @@ Two run modes, deliberately layered:
   reliability, but the summary is written by the LLM *constrained to the facts*
   and then re-checked by the verifier.
 
-Ruling: intent parsing stays deterministic even when an LLM is present. A ticker
-or metric mis-parsed by an LLM would be a silent provenance bug; the constrained
-vocabulary (tickers + metric names) is better handled by rules.
+Ruling: intent parsing is LLM-first when an LLM is present (for flexible
+phrasing the rule parser cannot handle), with the deterministic rule parser as
+fallback. Every LLM output is validated against the SEC ticker map and the
+metric registry, so an LLM mis-parse cannot inject a wrong company or metric.
 """
 
 from __future__ import annotations
 
+import json
 import re
 
 from .edgar import EdgarClient
 from .extractor import extract_metrics
 from .llm import LLM
-from .metrics import ALIASES, metric_label
+from .metrics import ALIASES, canonical_metric, metric_label
 from .profile import Memory
 from .schema import Answer, Fact, QueryIntent
 from .skills import Skill, load_all, match_skill
@@ -54,6 +56,36 @@ _STOPWORDS = {
 _SPECIAL_PATTERNS = {
     "cash": r"\bcash\b(?!\s*flow)",
 }
+
+_INTENT_SYSTEM = (
+    "Extract the companies and financial metrics from the analyst's question. "
+    'Respond with ONLY a JSON object, no prose, shaped like '
+    '{"tickers":["NVDA"],"metrics":["revenue"],"num_periods":4,"frequency":"quarterly"}. '
+    "- tickers: UPPERCASE stock symbols (NVDA, not 'Nvidia'); [] if none. "
+    "- metrics: canonical keys only, from revenue, net_income, gross_profit, "
+    "operating_income, rd_expense, cost_of_revenue, total_assets, total_liabilities, "
+    "cash, operating_cash_flow, diluted_eps, shares_outstanding; map user phrasing "
+    "to the closest key ('profitability' -> net_income); [] if none. "
+    "- num_periods: integer (default 4). "
+    "- frequency: 'quarterly' or 'annual'."
+)
+
+
+def _parse_json_obj(text: str) -> dict:
+    """Parse a JSON object out of LLM output, tolerating markdown fences/prose."""
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+    return {}
 
 
 def _extract_metrics(query_lower: str) -> list[str]:
@@ -121,11 +153,13 @@ class Analyst:
         llm: LLM | None = None,
         skills: dict[str, Skill] | None = None,
         memory_dir: str = "data/memory",
+        use_llm_intent: bool = True,
     ) -> None:
         self.client = client or EdgarClient()
         self.memory = memory or Memory(memory_dir)
         self.llm = llm
         self.skills = skills if skills is not None else load_all()
+        self.use_llm_intent = use_llm_intent
         self.last_facts_by_company: dict[str, dict[str, list[Fact]]] = {}
 
     def run(self, query: str) -> Answer:
@@ -170,8 +204,62 @@ class Analyst:
 
     # -- internals ---------------------------------------------------------
     def _resolve(self, query: str) -> QueryIntent:
-        intent = parse_intent(query, self.memory, self.client)
-        return intent
+        det = parse_intent(query, self.memory, self.client)
+        if self.llm is None or not self.use_llm_intent:
+            return det
+        fields = self._llm_intent_fields(query)
+        return QueryIntent(
+            raw_query=query,
+            tickers=fields.get("tickers", det.tickers),
+            metrics=fields.get("metrics", det.metrics),
+            frequency=fields.get("frequency", det.frequency),
+            num_periods=fields.get("num_periods", det.num_periods),
+        )
+
+    def _llm_intent_fields(self, query: str) -> dict:
+        """Ask the LLM to parse the query; return validated fields ({} on failure).
+
+        Tickers are validated against the SEC ticker map and metrics against the
+        metric registry, so an LLM mis-parse cannot inject a wrong company/metric.
+        """
+        try:
+            resp = self.llm.chat(
+                [
+                    {"role": "system", "content": _INTENT_SYSTEM},
+                    {"role": "user", "content": query},
+                ]
+            )
+            args = _parse_json_obj(resp.get("content") or "")
+        except Exception:
+            return {}
+
+        out: dict = {}
+        tickers: list[str] = []
+        for t in args.get("tickers") or []:
+            t = str(t).upper()
+            try:
+                self.client.ticker_to_cik(t)
+                tickers.append(t)
+            except KeyError:
+                continue
+        if tickers:
+            out["tickers"] = tickers
+
+        metrics: list[str] = []
+        for m in args.get("metrics") or []:
+            key = canonical_metric(str(m))
+            if key and key not in metrics:
+                metrics.append(key)
+        if metrics:
+            out["metrics"] = metrics
+
+        freq = args.get("frequency")
+        if freq in ("quarterly", "annual"):
+            out["frequency"] = freq
+        n = args.get("num_periods")
+        if isinstance(n, int) and 1 <= n <= 20:
+            out["num_periods"] = n
+        return out
 
     def _cite(self, citations: list[str], url: str | None) -> int:
         if url and url not in citations:

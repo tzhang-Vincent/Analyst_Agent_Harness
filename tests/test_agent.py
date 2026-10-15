@@ -118,6 +118,72 @@ def test_parse_intent_earnings_per_share_not_net_income():
     assert intent.metrics == ["diluted_eps"]
 
 
+class ValidatingFakeClient(FakeClient):
+    """FakeClient that only resolves a known set of tickers (rejects others)."""
+
+    VALID = {"NVDA", "AMD", "INTC", "MSFT", "AAPL"}
+
+    def ticker_to_cik(self, ticker):
+        if ticker in self.VALID:
+            return self._cik
+        raise KeyError(ticker)
+
+
+class FakeLLM:
+    def __init__(self, result):
+        self._result = result
+
+    def chat(self, messages, tools=None, tool_choice=None):
+        return self._result
+
+
+def _llm_resp(args):
+    import json as _json
+
+    return {"role": "assistant", "content": _json.dumps(args), "tool_calls": []}
+
+
+def test_llm_intent_overrides_and_fills_gaps(tmp_path):
+    client = ValidatingFakeClient(_qfacts())
+    llm = FakeLLM(_llm_resp({"tickers": ["NVDA", "MSFT"], "metrics": ["revenue", "net_income"], "num_periods": 3}))
+    analyst = Analyst(client=client, memory=Memory(tmp_path), llm=llm)
+    intent = analyst._resolve("profitability of NVDA and MSFT")
+    assert intent.tickers == ["NVDA", "MSFT"]
+    assert intent.metrics == ["revenue", "net_income"]
+    assert intent.num_periods == 3
+
+
+def test_llm_intent_invalid_ticker_dropped(tmp_path):
+    client = ValidatingFakeClient(_qfacts())
+    llm = FakeLLM(_llm_resp({"tickers": ["NVDA", "ZZZZ"], "metrics": ["revenue"]}))
+    analyst = Analyst(client=client, memory=Memory(tmp_path), llm=llm)
+    intent = analyst._resolve("NVDA revenue")
+    assert intent.tickers == ["NVDA"]  # ZZZZ not a real ticker -> dropped
+    assert intent.metrics == ["revenue"]
+
+
+def test_llm_intent_fallback_on_error(tmp_path):
+    class BoomLLM:
+        def chat(self, *a, **k):
+            raise RuntimeError("boom")
+
+    client = ValidatingFakeClient(_qfacts())
+    analyst = Analyst(client=client, memory=Memory(tmp_path), llm=BoomLLM())
+    intent = analyst._resolve("NVDA revenue last 2 quarters")
+    assert intent.tickers == ["NVDA"]
+    assert intent.metrics == ["revenue"]
+    assert intent.num_periods == 2
+
+
+def test_llm_intent_fallback_when_empty(tmp_path):
+    client = ValidatingFakeClient(_qfacts())
+    llm = FakeLLM(_llm_resp({"tickers": [], "metrics": []}))
+    analyst = Analyst(client=client, memory=Memory(tmp_path), llm=llm)
+    intent = analyst._resolve("NVDA revenue last 2 quarters")
+    assert intent.tickers == ["NVDA"]  # deterministic fallback
+    assert intent.metrics == ["revenue"]
+
+
 def test_run_zero_first_value_no_crash(tmp_path):
     data = {
         "entityName": "CO",

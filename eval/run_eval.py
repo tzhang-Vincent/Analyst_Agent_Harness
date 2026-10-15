@@ -70,7 +70,12 @@ def main(argv: list[str] | None = None) -> None:
 
     rows: list[EvalRow] = []
     with EdgarClient() as client:
-        analyst = Analyst(client=client, memory=Memory("data/eval_memory"), llm=llm)
+        # use_llm_intent=False keeps intent parsing deterministic so coverage/
+        # precision measure the data layer (not the LLM's intent parse), while
+        # the LLM is still used for the summary, whose hallucinations are counted.
+        analyst = Analyst(
+            client=client, memory=Memory("data/eval_memory"), llm=llm, use_llm_intent=False
+        )
         for q in questions:
             oracle = build_oracle(client, q)
             oracle_values = [o.value for o in oracle]
