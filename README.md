@@ -281,9 +281,9 @@ The hard questions show the real picture: on straightforward questions the agent
 
 `--chat` 用带逐轮真值的对话脚本（`eval/dialogues.py`）跑 agent。每轮的 spec 编码了*正确*的指代解析——"NVDA 营收"之后"跟 AMD 比"，第二轮标成 `["NVDA","AMD"]`——然后逐轮用同一套指标测它是否解析对、是否可溯源。
 
-Result (deepseek-v4-pro, 9 turns): coverage 100%, precision 94%, provenance 100%, hallucination 0, reference-resolved 8/9 (89%). The one miss is a period-carry turn where the agent over-fetched on "annual … last 2 fiscal years".
+Result (deepseek-v4-pro, 9 turns): coverage 100%, precision 100%, provenance 100%, hallucination 0, reference-resolved 9/9 (100%).
 
-结果（9 轮）：coverage 100%、precision 94%、provenance 100%、幻觉 0、指代解析正确 8/9（89%）。唯一失误是一轮周期承接，agent 对"年度…最近 2 个财年"多抓了。
+结果（9 轮）：coverage 100%、precision 100%、provenance 100%、幻觉 0、指代解析正确 9/9（100%）。
 
 Reference resolution is measured *indirectly* — resolve "it" to the wrong company and coverage/precision drop — and cross-turn hallucination propagation is caught by the same verifier (a number invented in turn 1 is still not in turn 2's facts). No new metric is needed.
 
