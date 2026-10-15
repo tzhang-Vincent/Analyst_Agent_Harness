@@ -1,9 +1,10 @@
 """Run the evaluation.
 
 The **harness is measured as the full product** — ``Analyst`` with the LLM wired
-in, i.e. intent parsing + deterministic EDGAR extraction + LLM summary + the
+in, i.e. LLM intent parsing + deterministic EDGAR extraction + LLM summary + the
 verifier gate. Metrics on the final answer:
 
+- **intent** — did the LLM parse the right tickers + metrics + frequency + N?
 - **coverage (recall)** — fraction of EDGAR-oracle values present in the answer.
 - **precision** — fraction of the answer's values that are actually in the oracle
   (catches wrong/extra companies or metrics).
@@ -16,8 +17,10 @@ from memory — the "ChatGPT" equivalent.
 
 Run::
 
-    python -m eval.run_eval              # full harness (LLM summary if a key is set)
-    python -m eval.run_eval --baseline   # also the bare-LLM baseline
+    python -m eval.run_eval              # full agent (LLM intent + summary)
+    python -m eval.run_eval --baseline   # + bare-LLM baseline
+    python -m eval.run_eval --baseline --limit 5   # quick subset
+    python -m eval.run_eval --no-llm-intent        # deterministic intent (debug)
 """
 
 from __future__ import annotations
@@ -52,29 +55,44 @@ def _baseline_answer(llm: LLM, question: str) -> list[float]:
     return extract_numbers(resp.get("content") or "")
 
 
+def _intent_ok(intent, q) -> bool:
+    """Did the parsed intent match the question's ground-truth spec exactly?"""
+    if intent is None:
+        return False
+    return (
+        set(intent.tickers) == set(q.tickers)
+        and set(intent.metrics) == set(q.metrics)
+        and intent.frequency == q.frequency
+        and intent.num_periods == q.n
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--baseline", action="store_true",
                    help="also run the bare-LLM baseline (requires an LLM key).")
     p.add_argument("--limit", type=int, default=None,
                    help="run only the first N questions.")
+    p.add_argument("--no-llm-intent", action="store_true",
+                   help="use deterministic (rule) intent parsing instead of the LLM.")
     p.add_argument("--provider", choices=["anthropic", "openai", "deepseek"])
     p.add_argument("--model")
     args = p.parse_args(argv)
 
     llm: LLM | None = LLM(args.provider, args.model) if is_configured(args.provider) else None
     if llm is None:
-        console.print("[yellow]No LLM key configured; harness runs deterministic (no LLM summary).[/yellow]")
+        console.print("[yellow]No LLM key configured; harness runs deterministic (no LLM).[/yellow]")
 
     questions = QUESTIONS if args.limit is None else QUESTIONS[: args.limit]
+    use_llm_intent = not args.no_llm_intent
 
     rows: list[EvalRow] = []
     with EdgarClient() as client:
-        # use_llm_intent=False keeps intent parsing deterministic so coverage/
-        # precision measure the data layer (not the LLM's intent parse), while
-        # the LLM is still used for the summary, whose hallucinations are counted.
         analyst = Analyst(
-            client=client, memory=Memory("data/eval_memory"), llm=llm, use_llm_intent=False
+            client=client,
+            memory=Memory("data/eval_memory"),
+            llm=llm,
+            use_llm_intent=use_llm_intent,
         )
         for q in questions:
             oracle = build_oracle(client, q)
@@ -82,6 +100,7 @@ def main(argv: list[str] | None = None) -> None:
 
             answer = analyst.run(q.text)
             values = [f.provenance.value for f in answer.facts]
+            iok = _intent_ok(analyst.last_intent, q)
             hcov = value_coverage(values, oracle_values)
             hprec = value_precision(values, oracle_values)
             prov = provenance_coverage(answer.facts)
@@ -92,19 +111,20 @@ def main(argv: list[str] | None = None) -> None:
                 bcov = value_coverage(_baseline_answer(llm, q.text), oracle_values)
 
             rows.append(
-                EvalRow(q.id, q.category, len(oracle_values), hcov, prov, hprec, halluc, bcov)
+                EvalRow(q.id, q.category, len(oracle_values), iok, hcov, prov, hprec, halluc, bcov)
             )
             line = (
-                f"[{q.id}] coverage={hcov * 100:.0f}% precision={hprec * 100:.0f}% "
-                f"prov={prov * 100:.0f}% halluc={halluc}"
+                f"[{q.id}] intent={'ok' if iok else 'BAD'} coverage={hcov * 100:.0f}% "
+                f"precision={hprec * 100:.0f}% prov={prov * 100:.0f}% halluc={halluc}"
                 + (f" bare_llm={bcov * 100:.0f}%" if bcov is not None else "")
             )
             print(line, flush=True)
 
-    table = Table(title="Evaluation (full harness, with LLM)")
+    table = Table(title="Evaluation (full agent, LLM intent + summary)")
     table.add_column("Q", justify="right")
     table.add_column("Category")
     table.add_column("Oracle", justify="right")
+    table.add_column("Intent", justify="right")
     table.add_column("Coverage", justify="right")
     table.add_column("Precision", justify="right")
     table.add_column("Provenance", justify="right")
@@ -114,6 +134,7 @@ def main(argv: list[str] | None = None) -> None:
     for r in rows:
         row = [
             r.question_id, r.category, str(r.oracle_values),
+            "ok" if r.intent_ok else "BAD",
             f"{r.harness_coverage * 100:.0f}%", f"{r.harness_precision * 100:.0f}%",
             f"{r.harness_provenance * 100:.0f}%", str(r.hallucinations),
         ]
@@ -125,6 +146,7 @@ def main(argv: list[str] | None = None) -> None:
     s = summarize(rows)
     console.print(
         f"\n[b]Overall[/b]: {s['questions']} questions — "
+        f"intent [green]{s['intent_accuracy'] * 100:.0f}%[/green], "
         f"coverage [green]{s['harness_accuracy'] * 100:.0f}%[/green], "
         f"precision [green]{s['harness_precision'] * 100:.0f}%[/green], "
         f"provenance [green]{s['harness_provenance'] * 100:.0f}%[/green], "

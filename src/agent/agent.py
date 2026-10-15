@@ -161,9 +161,11 @@ class Analyst:
         self.skills = skills if skills is not None else load_all()
         self.use_llm_intent = use_llm_intent
         self.last_facts_by_company: dict[str, dict[str, list[Fact]]] = {}
+        self.last_intent: QueryIntent | None = None
 
     def run(self, query: str) -> Answer:
         intent = self._resolve(query)
+        self.last_intent = intent
 
         # A matched skill supplies sector knowledge (which metrics to use).
         skill = match_skill(query, self.skills)

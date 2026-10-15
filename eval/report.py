@@ -10,8 +10,9 @@ class EvalRow:
     question_id: str
     category: str
     oracle_values: int
-    harness_coverage: float      # recall: are all oracle values present?
-    harness_provenance: float
+    intent_ok: bool = False      # did the LLM parse the right tickers+metrics?
+    harness_coverage: float = 1.0  # recall: are all oracle values present?
+    harness_provenance: float = 1.0
     harness_precision: float = 1.0  # are all harness values actually in oracle?
     hallucinations: int = 0      # unsupported numbers the verifier caught & removed
     baseline_coverage: float | None = None
@@ -60,6 +61,7 @@ def summarize(rows: list[EvalRow]) -> dict:
     if n == 0:
         return {
             "questions": 0,
+            "intent_accuracy": 0.0,
             "harness_accuracy": 0.0,
             "harness_precision": 0.0,
             "harness_provenance": 0.0,
@@ -69,6 +71,7 @@ def summarize(rows: list[EvalRow]) -> dict:
     base = [r.baseline_coverage for r in rows if r.baseline_coverage is not None]
     return {
         "questions": n,
+        "intent_accuracy": sum(1 for r in rows if r.intent_ok) / n,
         "harness_accuracy": sum(r.harness_coverage for r in rows) / n,
         "harness_precision": sum(r.harness_precision for r in rows) / n,
         "harness_provenance": sum(r.harness_provenance for r in rows) / n,

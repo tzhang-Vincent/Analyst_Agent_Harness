@@ -127,19 +127,22 @@ cross-company, single-metric, and annual queries:
 
 | Metric | Result |
 |---|---|
+| Intent accuracy (LLM parsed the right tickers/metrics) | **100%** (15/15) |
 | Coverage (recall: oracle values present) | **100%** |
 | Precision (no extra wrong values) | **100%** |
 | Provenance coverage | **100%** |
 | Hallucinations caught by the verifier | **0** |
-| Bare-LLM baseline (same model, no harness) | **~10%** |
+| Bare-LLM baseline (same model, no harness) | **12%** |
 
-Measured with `deepseek-v4-pro` via its Anthropic-compatible endpoint. Coverage
-and precision are reported together because **coverage alone is not enough**: it
-would miss "the harness returned the right numbers *plus* extra wrong ones" (a
-ticker/metric leak). Precision catches that. The bare LLM answering from memory
-with no tools hits ~10% — a ~10× gap that is the whole point of the harness. The
-metric is strict (±1% on exact per-quarter figures), so "around $100B" scores 0:
-analysts need exact, traceable numbers.
+Measured with `deepseek-v4-pro` via its Anthropic-compatible endpoint (thinking
+mode disabled for speed). Coverage and precision are reported together because
+**coverage alone is not enough**: it would miss "the harness returned the right
+numbers *plus* extra wrong ones" (a ticker/metric leak). Precision catches that.
+The bare LLM answering from memory with no tools hits ~12% (and 0% on most
+questions — its few hits are memorized figures for well-known companies) — a
+~8× gap that is the whole point of the harness. The metric is strict (±1% on
+exact per-quarter figures), so "around $100B" scores 0: analysts need exact,
+traceable numbers.
 
 ```bash
 .venv/bin/python -m eval.run_eval                  # full harness (LLM summary)

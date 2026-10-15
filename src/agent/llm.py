@@ -98,10 +98,14 @@ class LLM:
         provider: str | None = None,
         model: str | None = None,
         base_url: str | None = None,
+        thinking: str | None = "disabled",
     ) -> None:
         self.provider = provider or PROVIDER
         self.model = model or MODEL
         self.base_url = base_url or BASE_URL
+        # Anthropic extended-thinking. "disabled" keeps reasoning models fast;
+        # pass thinking=None to use the endpoint's default.
+        self.thinking = thinking
 
     def chat(
         self,
@@ -133,6 +137,8 @@ class LLM:
         }
         if system:
             kwargs["system"] = system
+        if self.thinking:
+            kwargs["thinking"] = {"type": self.thinking}
         if tools:
             kwargs["tools"] = to_anthropic_tools(tools)
             if tool_choice:
