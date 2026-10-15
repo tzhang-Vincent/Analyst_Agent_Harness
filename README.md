@@ -157,21 +157,56 @@ Anything that fails either check is physically removed from the answer, not just
 
 ## 评测：怎么证明它"击败了 ChatGPT" / How I measured it
 
-The comparison is **controlled**: the same model (`deepseek-v4-pro`), with the harness on vs off, over 15 questions spanning cross-quarter, cross-company, single-metric, and annual queries. Everything is measured against an oracle — the deterministic extractor applied to each question's ground-truth spec, i.e. the correct answer.
+### 基准真值（oracle）怎么来 / How the oracle is built
 
-对比是**受控的**：同一模型（`deepseek-v4-pro`），harness 开 vs 关，15 道题（跨季度/跨公司/单指标/年度），都对比同一份 oracle——即确定性 extractor 按题目真值 spec 取出的正确答案。
+The oracle is the *correct answer*: the same deterministic extractor, run on each question's ground-truth spec (tickers, metrics, frequency, n). The harness's numbers must match it; the bare LLM's won't, because it has no source of truth.
 
-| Metric | agent | pipeline | bare LLM |
+oracle 就是"正确答案"：同一个确定性 extractor，按每道题标注的真值 spec（ticker、指标、频率、期数）直取 EDGAR。harness 的数字必须和它对上；裸 LLM 对不上，因为它没有事实来源。
+
+### 指标，逐个解释 / The metrics, one by one
+
+Five metrics, each designed to catch a specific failure mode:
+
+五个指标，各抓一类错误：
+
+| 指标 / Metric | 测什么 / What it measures | 抓哪类错 / Catches |
+|---|---|---|
+| Coverage (recall) / 覆盖率 | oracle 的值有多少出现在答案里 / fraction of oracle values present | 漏抓 / missing data |
+| Precision / 精度 | 答案的值有多少在 oracle 里 / fraction of the answer's values backed by the oracle | 多抓、抓错公司/指标 / extra wrong data (ticker leak) |
+| Provenance / 溯源覆盖率 | fact 有多少带文件编号 + 链接 / fraction of facts with accession + source URL | 不可溯源 / untraceable numbers |
+| Intent accuracy / 意图准确率 | LLM 解析的 ticker/指标/周期是否和题目真值一致（pipeline）/ did the LLM parse the right tickers/metrics/frequency/n | LLM 意图解析错 / intent parse errors |
+| Hallucinations / 幻觉 | verifier 拦截并删除的数字数 / count of numbers the verifier caught and removed | 编造或归属错 / fabricated or misattributed numbers |
+
+Matching is strict: a number counts only if it's within ±1% (plus $1) of a fact value, so "around $100B" scores 0. The tolerance exists only because summaries render compactly ("$46.74B" vs 46,743,000,000).
+
+匹配很严：一个数字只在和 fact 值相差 ≤1%（外加 $1）时才算命中——"大概 $100B"直接 0 分。容差只是因为摘要用紧凑格式（"$46.74B" 与 46,743,000,000 之间的舍入）。
+
+### 受控对比怎么跑 / How the controlled comparison runs
+
+For each of 15 questions across four categories (cross-quarter, cross-company, single-metric, annual), the runner:
+
+15 道题，覆盖四类（跨季度、跨公司、单指标、年度），每道都按下面三步：
+
+1. **builds the oracle** — the ground truth from EDGAR;
+   **建 oracle** —— 从 EDGAR 取真值；
+2. **runs the harness** (agent or pipeline mode) and takes the values in its facts;
+   **跑 harness**（agent 或 pipeline），取它 fact 里的值；
+3. **runs the bare LLM** — the same model, with no tools, explicitly told *not* to say "I don't know" — and extracts numbers from its prose.
+   **跑裸 LLM** —— 同一模型、无工具、明确不许说"不知道"——从它的文字里抽数字。
+
+The bare LLM is forced to answer from memory precisely because that's the failure mode we're measuring: no source of truth, filling the gap from its weights — the "ChatGPT" equivalent.
+
+裸 LLM 被强制"凭记忆回答"，正是为了测那个失败模式：没有事实来源、从权重里补数字——也就是 "ChatGPT" 的等价物。
+
+### 结果 / Results
+
+| Metric / 指标 | agent | pipeline | bare LLM / 裸 LLM |
 |---|---|---|---|
-| Coverage (recall) | 100% | 100% | ~11% |
-| Precision (no extra wrong values) | 100% | 100% | — |
-| Provenance coverage | 100% | 100% | 0% |
-| Intent accuracy | — | 100% | — |
-| Numbers the verifier caught | 0 | 0 | (all) |
-
-The two numbers I'd point to in an interview: **coverage *and* precision, together.** Coverage alone is flattering — it would have missed the ticker-leak bug (fetching the right numbers *plus* an extra wrong company), which precision caught. And the bare LLM's ~11% is telling: it's a handful of memorized figures for famous companies, zero on everything else. The harness is 100% every time because it's deterministic, and 100% of its numbers are traceable.
-
-面试时我会指出的两个数字：**coverage 和 precision 要一起看**。只测 coverage 是讨好的——它会漏掉"答对了又答多了"（ticker 泄漏 bug 就是这么被 precision 抓到的）。而裸 LLM 的 ~11% 很能说明问题：那是对知名公司的几个背下来的数字，其余全是 0。harness 每次 100%，因为它是确定性的，而且每个数字都可溯源。
+| Coverage (recall) / 覆盖率 | 100% | 100% | ~11% |
+| Precision / 精度 | 100% | 100% | — |
+| Provenance coverage / 溯源覆盖率 | 100% | 100% | 0% |
+| Intent accuracy / 意图准确率 | — | 100% | — |
+| Numbers the verifier caught / 被拦截数字 | 0 | 0 | (all) |
 
 ```bash
 .venv/bin/python -m eval.run_eval                  # pipeline (LLM intent + summary)
@@ -179,10 +214,13 @@ The two numbers I'd point to in an interview: **coverage *and* precision, togeth
 .venv/bin/python -m eval.run_eval --baseline       # + bare-LLM baseline
 ```
 
-## 诚实的局限 / Honest limitations
+### 怎么解读这些数字 / How to read the numbers
 
-- **Fiscal Q4 across the calendar-year boundary** — companies whose fiscal year straddles Dec 31 (NVIDIA ends late January) sometimes have no discrete Q4 flow fact; provenance's start/end dates always disambiguate. / 财年跨自然年的公司（英伟达 1 月底结束）有时缺单独的 Q4 期间型 fact；起止日期始终可消歧。
-- **Cross-company quarter misalignment** — companies have different fiscal year-ends, so "Q2 FY2026" isn't the same calendar period for NVDA and AMD; the table keeps each company's columns separate rather than conflating them. / 不同公司财年结束月不同，"Q2 FY2026"对 NVDA 和 AMD 不是同一日历区间；对比表按各自日期分列，不强行对齐。
+Coverage alone is flattering — it would have missed the ticker-leak bug (the right numbers *plus* an extra wrong company), which precision caught. And because the oracle shares the extractor with the harness, "100% coverage" is partly self-consistency; the honest evidence is the trio of **precision** (no wrong data), **hallucinations = 0** (no invented numbers), and the **baseline gap** (11% vs 100%) together. The bare LLM's 11% is a handful of memorized figures for famous companies and zero everywhere else.
+
+只测 coverage 是讨好的——它会漏掉"答对了又答多了"（ticker 泄漏就是 precision 才抓到）。而且 oracle 和 harness 共用 extractor，所以"100% 覆盖率"部分是自洽；真正证明价值的证据是**精度（无错数据）+ 幻觉=0（无编造数）+ baseline 差距（11% vs 100%）三者一起**。裸 LLM 的 11% 是对知名公司的几个背下来的数字，其余全是 0。
+
+## 诚实的局限 / Honest limitations
 - **Attribution is line-granular** — a swapped pair of numbers inside one line isn't caught; finer detection would need clause-level splitting. / 归属校验是行粒度，一行内两个数字对调分辨不出，更细要拆到从句级。
 - **Deterministic ticker parsing** — single-letter tickers ("V") or tickers that are also financial words ("CASH", "NET") need the full name or the watchlist. / 单字符 ticker 或与金融词重合的 ticker（"CASH"/"NET"）需用全名或加入 watchlist。
 
