@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 
 from rich.console import Console
 
@@ -20,7 +21,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="Financial research agent with full provenance tracking over SEC EDGAR.",
     )
     p.add_argument("query", nargs="?", help="Natural-language research question.")
-    p.add_argument("-o", "--export", help="Write results to an .xlsx or .csv file.")
+    p.add_argument("-o", "--export", help="Write results to an .xlsx or .csv file "
+                   "(a bare filename goes into --output-dir).")
+    p.add_argument("--output-dir", default="output",
+                   help="Directory for -o exports (default: output/).")
     p.add_argument("--correct", help="Record a user correction/preference "
                    "(e.g. 'I want annual data, not quarterly'), then exit.")
     p.add_argument("--provider", choices=["anthropic", "openai", "deepseek"],
@@ -69,11 +73,15 @@ def main(argv: list[str] | None = None) -> None:
         console.print(render_terminal(group_facts(answer.facts), title="Comparison"))
 
     if args.export:
-        if args.export.endswith(".csv"):
-            to_csv(answer.facts, args.export)
+        path = args.export
+        if not os.path.isabs(path):
+            os.makedirs(args.output_dir, exist_ok=True)
+            path = os.path.join(args.output_dir, path)
+        if path.endswith(".csv"):
+            to_csv(answer.facts, path)
         else:
-            to_excel(group_facts(answer.facts), args.export)
-        console.print(f"\n[green]Exported to {args.export}[/green]")
+            to_excel(group_facts(answer.facts), path)
+        console.print(f"\n[green]Exported to {path}[/green]")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,9 @@ env/
 # Runtime data (cache + user memory are local, not committed)
 data/
 
+# Generated exports
+output/
+
 # Test / tooling artifacts
 .pytest_cache/
 .coverage
