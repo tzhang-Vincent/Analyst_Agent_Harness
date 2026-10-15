@@ -169,7 +169,7 @@ agent 通过四个机制随时间适应，都持久化在普通 JSON（`data/mem
 1. **Watchlist accumulation / watchlist 累积** — every ticker the user queries is added to the watchlist; a vague query ("compare the chip stocks") then falls back to it. / 查过的新 ticker 自动进 watchlist，模糊查询默认落到它。
 2. **Preferred-metric prioritization / 偏好指标优先级** — metrics the user keeps asking for move to the front, so a metric-less query uses them first (a semiconductor analyst who always asks about R&D intensity sees it prioritized). / 常查的指标排前面，没显式说指标的查询优先用它们。
 3. **User corrections / 用户修正** — `agent --correct "I want annual data, not quarterly"` records a correction; it is injected into the LLM's prompt on every later query, so the preference sticks. / `agent --correct "..."` 记录修正，之后每次查询注入 prompt，偏好一直生效。
-4. **Sector-scoped skills / 按行业的 skill** — each skill declares which sector it is for; the agent identifies a company's sector (a deterministic ticker→sector map) and applies that sector's recipe, so NVDA automatically gets the semiconductor metrics (R&D intensity, gross margin) and MSFT the software ones. Users add more sectors as YAML in `skills/`. / 每个 skill 声明所属行业；agent 识别公司的行业（确定性的 ticker→行业映射）后套用该行业配方——问 NVDA 自动用半导体指标（研发强度、毛利率），问 MSFT 用软件指标。用户可在 `skills/` 加更多行业。
+4. **Sector-scoped skills / 按行业的 skill** — each skill is a YAML file in `skills/` declaring its sector and metrics; the LLM infers each company's sector itself and applies the matching recipe, so NVDA gets the semiconductor metrics (R&D intensity, gross margin) and MSFT the software ones. Users add sectors by dropping in a new YAML. / 每个 skill 是 `skills/` 里的一个 YAML，声明所属行业和指标；LLM 自己推理公司的行业并套用对应配方——问 NVDA 自动用半导体指标（研发强度、毛利率），问 MSFT 用软件指标。用户丢一个新 YAML 就能加行业。
 
 ## 校验：不只查"数字在不在"，还查"挂在谁头上" / The verifier
 

@@ -1,0 +1,9 @@
+name: technology-analysis
+sector: technology
+description: For consumer-technology companies (AAPL, ...), focus on gross margin and cash position.
+metrics:
+  - revenue
+  - gross_profit
+  - cash
+frequency: quarterly
+n_periods: 4

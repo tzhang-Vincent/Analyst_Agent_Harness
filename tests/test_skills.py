@@ -1,45 +1,32 @@
-from agent.skills import (
-    load_builtin,
-    load_user_skills,
-    sector_of,
-    skill_for_tickers,
-)
+from agent.skills import describe_skills, load_skills
 
 
-def test_builtin_skills_have_sectors():
-    skills = load_builtin()
+def test_load_builtin_sector_skills():
+    # loads from the project's skills/ directory
+    skills = load_skills()
     assert "semiconductor-analysis" in skills
     assert skills["semiconductor-analysis"].sector == "semiconductors"
     assert skills["semiconductor-analysis"].metrics == ["revenue", "rd_expense", "gross_profit"]
+    assert "general-health" in skills
 
 
-def test_sector_of():
-    assert sector_of("NVDA") == "semiconductors"
-    assert sector_of("msft") == "software"
-    assert sector_of("UNKNOWN") == ""
-
-
-def test_skill_for_tickers_matches_sector():
-    skills = load_builtin()
-    assert skill_for_tickers(["NVDA"], skills).sector == "semiconductors"
-    assert skill_for_tickers(["MSFT"], skills).sector == "software"
-    assert skill_for_tickers(["AAPL"], skills).sector == "technology"
-
-
-def test_skill_for_tickers_falls_back_to_general():
-    skills = load_builtin()
-    assert skill_for_tickers(["SOME_UNKNOWN_TICKER"], skills).sector == "general"
-
-
-def test_load_user_skills_reads_sector(tmp_path):
-    (tmp_path / "my-skill.yaml").write_text(
-        "name: my-custom-skill\n"
+def test_load_skills_from_directory(tmp_path):
+    (tmp_path / "energy-analysis.yaml").write_text(
+        "name: energy-analysis\n"
         "sector: energy\n"
-        "description: check operating margin\n"
-        "metrics: [revenue, operating_income]\n"
+        "description: For energy companies.\n"
+        "metrics: [revenue, operating_cash_flow]\n"
         "n_periods: 6\n"
     )
-    skills = load_user_skills(tmp_path)
-    assert "my-custom-skill" in skills
-    assert skills["my-custom-skill"].sector == "energy"
-    assert skills["my-custom-skill"].n_periods == 6
+    skills = load_skills(tmp_path)
+    assert "energy-analysis" in skills
+    assert skills["energy-analysis"].sector == "energy"
+    assert skills["energy-analysis"].n_periods == 6
+
+
+def test_describe_skills():
+    skills = load_skills()
+    text = describe_skills(skills)
+    assert "semiconductor-analysis" in text
+    assert "semiconductors" in text
+    assert "revenue" in text

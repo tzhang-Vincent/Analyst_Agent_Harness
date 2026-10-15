@@ -18,7 +18,7 @@ from .llm import LLM
 from .metrics import ALIASES, canonical_metric, metric_label
 from .profile import Memory
 from .schema import Answer, QueryIntent
-from .skills import match_skill, skill_for_tickers
+from .skills import describe_skills
 from .table import flatten, fmt_compact
 from .verifier import sanitize_summary, verify
 
@@ -170,10 +170,6 @@ class PipelineRunner:
         intent = self._resolve(query)
         self.last_intent = intent
 
-        # A matched skill supplies sector knowledge (which metrics to use).
-        skill = skill_for_tickers(intent.tickers, self.skills) or match_skill(query, self.skills)
-        if skill and skill.metrics and not intent.metrics:
-            intent.metrics = skill.metrics
         if not intent.metrics:
             intent.metrics = self.memory.preferred_metrics() or ["revenue", "net_income"]
         if not intent.tickers:
@@ -223,6 +219,17 @@ class PipelineRunner:
         corrections = self.memory.recent_corrections()
         return ("\nUser preferences: " + "; ".join(corrections)) if corrections else ""
 
+    def _intent_system_prompt(self) -> str:
+        skills = describe_skills(self.skills)
+        extra = ""
+        if skills:
+            extra = (
+                "\nAvailable sector recipes (if the question asks for a company's "
+                "overall analysis or health without naming metrics, infer the "
+                "company's sector and return the matching recipe's metrics):\n" + skills
+            )
+        return _INTENT_SYSTEM + extra + self._correction_hint()
+
     def _llm_intent_fields(self, query: str) -> dict:
         """Ask the LLM to parse the query; return validated fields ({} on failure).
 
@@ -232,7 +239,7 @@ class PipelineRunner:
         try:
             resp = self.llm.chat(
                 [
-                    {"role": "system", "content": _INTENT_SYSTEM + self._correction_hint()},
+                    {"role": "system", "content": self._intent_system_prompt()},
                     {"role": "user", "content": query},
                 ]
             )

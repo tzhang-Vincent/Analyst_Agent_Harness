@@ -1,0 +1,9 @@
+name: semiconductor-analysis
+sector: semiconductors
+description: For semiconductor companies (NVDA, AMD, INTC, TSM, AVGO, ...), focus on R&D intensity and gross margin — the key health indicators for chip makers.
+metrics:
+  - revenue
+  - rd_expense
+  - gross_profit
+frequency: quarterly
+n_periods: 4

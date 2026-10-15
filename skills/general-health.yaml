@@ -1,0 +1,11 @@
+name: general-health
+sector: general
+description: General financial health for any company not in a specific sector.
+metrics:
+  - revenue
+  - net_income
+  - total_assets
+  - total_liabilities
+  - cash
+frequency: quarterly
+n_periods: 1

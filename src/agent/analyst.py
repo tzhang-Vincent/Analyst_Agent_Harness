@@ -12,10 +12,10 @@ from __future__ import annotations
 from .agent_loop import run_agent_loop
 from .edgar import EdgarClient
 from .llm import LLM
-from .pipeline import PipelineRunner, parse_intent
+from .pipeline import PipelineRunner
 from .profile import Memory
 from .schema import Answer
-from .skills import Skill, load_all, match_skill, skill_for_tickers
+from .skills import Skill, describe_skills, load_skills
 from .verifier import sanitize_summary, verify
 
 
@@ -33,7 +33,7 @@ class Analyst:
         self.client = client or EdgarClient()
         self.memory = memory or Memory(memory_dir)
         self.llm = llm
-        self.skills = skills if skills is not None else load_all()
+        self.skills = skills if skills is not None else load_skills()
         self.mode = mode  # "pipeline" | "agent"
         self.pipeline = PipelineRunner(
             self.client, self.memory, self.llm, self.skills, use_llm_intent
@@ -54,24 +54,6 @@ class Analyst:
             self.llm, self.client, query, hints=self._agent_hints(query)
         )
 
-    def _agent_hints(self, query: str) -> list[str]:
-        """Extra system-prompt lines: a matched skill's metrics + remembered corrections."""
-        hints: list[str] = []
-        det = parse_intent(query, self.memory, self.client)  # tickers -> sector (deterministic)
-        skill = skill_for_tickers(det.tickers, self.skills) or match_skill(query, self.skills)
-        if skill and skill.metrics:
-            hints.append(
-                f"These companies are in sector '{skill.sector}'. Saved analysis "
-                f"recipe '{skill.name}': prefer metrics {', '.join(skill.metrics)}."
-            )
-        corrections = self.memory.recent_corrections()
-        if corrections:
-            hints.append(
-                "The user has previously requested: " + "; ".join(corrections)
-                + ". Respect these preferences."
-            )
-        return hints
-
         answer = Answer(summary=summary_text, facts=facts, citations=citations)
         issues = verify(answer)
         if issues:
@@ -91,3 +73,20 @@ class Analyst:
         self.memory.record_query(query, tickers, metrics)
         self.memory.save()
         return answer
+
+    def _agent_hints(self, query: str) -> list[str]:
+        """Extra system-prompt lines: the sector skills + remembered corrections."""
+        hints: list[str] = []
+        skills_desc = describe_skills(self.skills)
+        if skills_desc:
+            hints.append(
+                "Available sector analysis recipes — infer each company's sector "
+                "yourself and use the matching recipe's metrics:\n" + skills_desc
+            )
+        corrections = self.memory.recent_corrections()
+        if corrections:
+            hints.append(
+                "The user has previously requested: " + "; ".join(corrections)
+                + ". Respect these preferences."
+            )
+        return hints

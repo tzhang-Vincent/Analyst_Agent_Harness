@@ -1,0 +1,9 @@
+name: software-analysis
+sector: software
+description: For software companies (MSFT, ...), focus on operating margin and revenue growth.
+metrics:
+  - revenue
+  - operating_income
+  - net_income
+frequency: quarterly
+n_periods: 4
