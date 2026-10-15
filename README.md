@@ -275,6 +275,20 @@ The hard questions show the real picture: on straightforward questions the agent
 
 刁难题才看到真实情况：常规题 agent 接近 100%；多跳题偶发掉分（LLM 工具决策有随机性）；无数据陷阱题它正确返回"无数据"而不是猜；开放题它抓真实可溯源数据、不编造。所以"100%"只在封闭题范畴内有意义——真正考验 agent 判断力的是刁难题。
 
+### 多轮对话评测 / Multi-turn conversation eval
+
+`--chat` runs the agent through dialogues with per-turn ground truth (in `eval/dialogues.py`). Each turn's spec encodes the *correct* reference resolution — "NVDA revenue" then "compare it with AMD" marks turn 2 as `["NVDA", "AMD"]` — and the same per-turn metrics then measure whether the agent resolved the reference and stayed traceable.
+
+`--chat` 用带逐轮真值的对话脚本（`eval/dialogues.py`）跑 agent。每轮的 spec 编码了*正确*的指代解析——"NVDA 营收"之后"跟 AMD 比"，第二轮标成 `["NVDA","AMD"]`——然后逐轮用同一套指标测它是否解析对、是否可溯源。
+
+Result (deepseek-v4-pro, 9 turns): coverage 100%, precision 94%, provenance 100%, hallucination 0, reference-resolved 8/9 (89%). The one miss is a period-carry turn where the agent over-fetched on "annual … last 2 fiscal years".
+
+结果（9 轮）：coverage 100%、precision 94%、provenance 100%、幻觉 0、指代解析正确 8/9（89%）。唯一失误是一轮周期承接，agent 对"年度…最近 2 个财年"多抓了。
+
+Reference resolution is measured *indirectly* — resolve "it" to the wrong company and coverage/precision drop — and cross-turn hallucination propagation is caught by the same verifier (a number invented in turn 1 is still not in turn 2's facts). No new metric is needed.
+
+指代解析是*间接*测的——把"它"解析成错公司，coverage/precision 就掉；跨轮幻觉传播由同一个 verifier 抓（第一轮编的数，第二轮也不在 facts 里）。不需要发明新指标。
+
 ## 诚实的局限 / Honest limitations
 - **Attribution is line-granular** — a swapped pair of numbers inside one line isn't caught; finer detection would need clause-level splitting. / 归属校验是行粒度，一行内两个数字对调分辨不出，更细要拆到从句级。
 - **Deterministic ticker parsing** — single-letter tickers ("V") or tickers that are also financial words ("CASH", "NET") need the full name or the watchlist. / 单字符 ticker 或与金融词重合的 ticker（"CASH"/"NET"）需用全名或加入 watchlist。
