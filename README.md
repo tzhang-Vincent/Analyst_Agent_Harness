@@ -34,6 +34,26 @@ Two guarantees fall out of this design:
 2. **Every number carries provenance.** A `Provenance` record — ticker, CIK, XBRL tag, fiscal period, filing accession number, filing date, and a clickable sec.gov URL — rides on every fact. If you can't click through to the source, the number doesn't ship.
    **每个数字都带溯源**——`Provenance` 记录（ticker、CIK、XBRL tag、财季、文件编号、提交日期、可点击的 sec.gov 链接）挂在每个 fact 上。点不到来源的数字，根本不会出现。
 
+## 整体设计决策总结 / Design decisions at a glance
+
+Here is the whole design in one map — each decision, why it was made, and where it lives:
+
+整体设计的一张总览——每个决策、为什么这么定、落在哪个模块：
+
+| 决策 / Decision | 理由 / Why | 落点 / Where |
+|---|---|---|
+| 数字由确定性抓取，LLM 从不生成数字 / numbers are fetched deterministically, never generated | 幻觉的根源是"没有事实来源"，拿走生成权就消除幻觉 / hallucination comes from having no source of truth; remove generation, remove the hallucination | `extractor.py` |
+| 每个数字带 provenance / every number carries provenance | 分析师要能逐格核对原始文件，溯源是硬需求 / analysts must be able to check every number against the source | `schema.py`, `edgar.py` |
+| LLM 只做意图解析 + 摘要 / the LLM only parses intent and writes the summary | 把"语言能力"和"事实"分离，互不污染 / keep language and facts separate | `llm.py`, `pipeline.py`, `agent_loop.py` |
+| 两种模式：pipeline + agent / two modes | 简单查询要确定性、便宜、可离线；复杂/开放查询要灵活性 / simple queries want determinism and low cost; open-ended ones want flexibility | `analyst.py` |
+| verifier 双重校验（编造 + 归属错）/ verifier double-check | 不只是"数字在不在"，还要"挂在谁头上" / not just "is the number real", but "is it attached to the right company" | `verifier.py` |
+| LLM 意图 + 确定性兜底 / LLM intent with a deterministic fallback | 拿到灵活性，又不丢安全（LLM 解析错也注入不了错数据）/ flexibility without sacrificing safety | `pipeline.py` |
+| 记忆 + 技能 / memory + skills | 行业专精 + agent 随使用演进 / sector specialization and adaptation over time | `profile.py`, `skills.py` |
+
+Everything else in this document is a deeper look at these seven choices.
+
+本文其余部分，都是对这七个选择的展开。
+
 ## 实际长什么样 / What it looks like
 
 A query and its output in the terminal:
