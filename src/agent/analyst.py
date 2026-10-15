@@ -50,13 +50,7 @@ class Analyst:
 
     def _run_agentic(self, query: str) -> Answer:
         """Agent mode: the LLM drives tool calls; the verifier still gates the answer."""
-        summary_text, facts = run_agent_loop(self.llm, self.client, query)
-
-        citations: list[str] = []
-        for f in facts:
-            u = f.provenance.source_url
-            if u and u not in citations:
-                citations.append(u)
+        summary_text, facts, citations = run_agent_loop(self.llm, self.client, query)
 
         answer = Answer(summary=summary_text, facts=facts, citations=citations)
         issues = verify(answer)

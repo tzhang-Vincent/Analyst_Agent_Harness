@@ -46,7 +46,7 @@ def test_execute_tool_drops_invalid_ticker():
     client = FakeClient(_facts())
     result = execute_tool("get_metrics", {"ticker": "ZZZZ", "metrics": ["revenue"]}, client)
     assert result["facts"] == []
-    assert result["text"] == "(no data found)"
+    assert result["facts_by_company"] == {}
 
 
 def test_execute_tool_compare_companies():

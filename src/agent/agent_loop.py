@@ -27,8 +27,9 @@ AGENT_SYSTEM = (
     "You are a financial research analyst with access to SEC EDGAR data through "
     "tools. To answer any question about financial figures you MUST call the tools "
     "to fetch the real data first — never answer from memory or estimate a number. "
-    "Then write a concise summary citing the fetched values with their source URLs. "
-    "If a tool returns no data, say so instead of guessing."
+    "Then write a concise summary citing each number with its [n] reference "
+    "(e.g. 'revenue was $46.7B [1]'). Do NOT paste source URLs in your answer — "
+    "use the [n] reference instead. If a tool returns no data, say so instead of guessing."
 )
 
 TOOL_SCHEMAS = [
@@ -75,15 +76,23 @@ TOOL_SCHEMAS = [
 ]
 
 
-def _facts_to_text(facts_by_company: dict[str, dict[str, list[Fact]]]) -> str:
+def _register(citations: list[str], url: str | None) -> int:
+    if url and url not in citations:
+        citations.append(url)
+    return citations.index(url) + 1 if url in citations else 0
+
+
+def _facts_to_text(facts_by_company: dict[str, dict[str, list[Fact]]], citations: list[str]) -> str:
+    """Render fetched facts for the LLM, each source as a ``[n]`` reference."""
     lines: list[str] = []
     for ticker in sorted(facts_by_company):
         for mk in sorted(facts_by_company[ticker]):
             for f in facts_by_company[ticker][mk]:
                 p = f.provenance
+                n = _register(citations, p.source_url)
                 lines.append(
                     f"{ticker} {metric_label(mk)} {f.period_label}: "
-                    f"{p.value:,.0f} {p.unit} | {p.source_url}"
+                    f"{p.value:,.0f} {p.unit} [{n}]"
                 )
     return "\n".join(lines) if lines else "(no data found)"
 
@@ -126,11 +135,11 @@ def execute_tool(name: str, args: dict, client: EdgarClient) -> dict:
         t: extract_metrics(client, t, validated_metrics, frequency, n)
         for t in validated_tickers
     }
-    return {"text": _facts_to_text(facts_by_company), "facts": _flatten(facts_by_company)}
+    return {"facts": _flatten(facts_by_company), "facts_by_company": facts_by_company}
 
 
-def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact]]:
-    """Run the tool-calling loop; return ``(final_text, facts)``."""
+def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact], list[str]]:
+    """Run the tool-calling loop; return ``(final_text, facts, citations)``."""
     import anthropic
 
     aclient = anthropic.Anthropic(
@@ -139,6 +148,7 @@ def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact
     )
     messages: list[dict] = [{"role": "user", "content": query}]
     all_facts: list[Fact] = []
+    citations: list[str] = []
     final_text = ""
 
     for iteration in range(MAX_ITERATIONS):
@@ -163,8 +173,9 @@ def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact
             for tu in tool_uses:
                 result = execute_tool(tu.name, dict(tu.input or {}), client)
                 all_facts.extend(result["facts"])
+                content = _facts_to_text(result["facts_by_company"], citations)
                 tool_results.append(
-                    {"type": "tool_result", "tool_use_id": tu.id, "content": result["text"]}
+                    {"type": "tool_result", "tool_use_id": tu.id, "content": content}
                 )
             messages.append({"role": "user", "content": tool_results})
             continue
@@ -185,4 +196,4 @@ def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact
         messages.append({"role": "assistant", "content": resp.content})
         messages.append({"role": "user", "content": feedback})
 
-    return final_text, all_facts
+    return final_text, all_facts, citations
