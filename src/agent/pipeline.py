@@ -18,7 +18,7 @@ from .llm import LLM
 from .metrics import ALIASES, canonical_metric, metric_label
 from .profile import Memory
 from .schema import Answer, QueryIntent
-from .skills import match_skill
+from .skills import match_skill, skill_for_tickers
 from .table import flatten, fmt_compact
 from .verifier import sanitize_summary, verify
 
@@ -171,7 +171,7 @@ class PipelineRunner:
         self.last_intent = intent
 
         # A matched skill supplies sector knowledge (which metrics to use).
-        skill = match_skill(query, self.skills)
+        skill = skill_for_tickers(intent.tickers, self.skills) or match_skill(query, self.skills)
         if skill and skill.metrics and not intent.metrics:
             intent.metrics = skill.metrics
         if not intent.metrics:

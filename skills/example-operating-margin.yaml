@@ -1,7 +1,9 @@
-# Example user-defined skill. Drop YAML files like this into skills/ to teach
-# the agent a new analysis recipe. Loaded automatically at startup.
+# Example user-defined sector skill. Drop YAML files like this into skills/ to
+# teach the agent a new sector analysis recipe. Loaded automatically at startup.
+# The `sector` field tells the agent which industry this recipe applies to.
 name: operating-margin-trend
-description: Track operating margin (operating income / revenue) over recent quarters.
+sector: software
+description: Track operating margin (operating income / revenue) over recent quarters for software companies.
 metrics:
   - revenue
   - operating_income

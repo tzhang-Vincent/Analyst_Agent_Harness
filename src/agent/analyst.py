@@ -12,10 +12,10 @@ from __future__ import annotations
 from .agent_loop import run_agent_loop
 from .edgar import EdgarClient
 from .llm import LLM
-from .pipeline import PipelineRunner
+from .pipeline import PipelineRunner, parse_intent
 from .profile import Memory
 from .schema import Answer
-from .skills import Skill, load_all, match_skill
+from .skills import Skill, load_all, match_skill, skill_for_tickers
 from .verifier import sanitize_summary, verify
 
 
@@ -57,11 +57,12 @@ class Analyst:
     def _agent_hints(self, query: str) -> list[str]:
         """Extra system-prompt lines: a matched skill's metrics + remembered corrections."""
         hints: list[str] = []
-        skill = match_skill(query, self.skills)
+        det = parse_intent(query, self.memory, self.client)  # tickers -> sector (deterministic)
+        skill = skill_for_tickers(det.tickers, self.skills) or match_skill(query, self.skills)
         if skill and skill.metrics:
             hints.append(
-                f"The user has a saved analysis recipe '{skill.name}' for this kind "
-                f"of question; prefer metrics: {', '.join(skill.metrics)}."
+                f"These companies are in sector '{skill.sector}'. Saved analysis "
+                f"recipe '{skill.name}': prefer metrics {', '.join(skill.metrics)}."
             )
         corrections = self.memory.recent_corrections()
         if corrections:
