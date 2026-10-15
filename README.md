@@ -183,9 +183,9 @@ Matching is strict: a number counts only if it's within ±1% (plus $1) of a fact
 
 ### 受控对比怎么跑 / How the controlled comparison runs
 
-For each of 15 questions across four categories (cross-quarter, cross-company, single-metric, annual), the runner:
+For each of 21 questions — 15 straightforward ones across four categories (cross-quarter, cross-company, single-metric, annual), plus 6 hard ones (implicit metrics, multi-hop reasoning, and a no-data trap) — the runner:
 
-15 道题，覆盖四类（跨季度、跨公司、单指标、年度），每道都按下面三步：
+21 道题——15 道常规题（跨季度、跨公司、单指标、年度四类）+ 6 道刁难题（隐式指标、多跳推理、无数据陷阱）——每道都按下面三步：
 
 1. **builds the oracle** — the ground truth from EDGAR;
    **建 oracle** —— 从 EDGAR 取真值；
@@ -214,11 +214,30 @@ The bare LLM is forced to answer from memory precisely because that's the failur
 .venv/bin/python -m eval.run_eval --baseline       # + bare-LLM baseline
 ```
 
+### 两道检查，两个不同的问题 / Two checks, two different questions
+
+Coverage/precision and hallucination answer *different* questions:
+
+coverage/precision 和 hallucination 回答的是*不同*的问题：
+
+- **Coverage/precision = external correctness** — "did it fetch the *right* data?" It compares the facts to the oracle, so it needs a known correct answer.
+  **coverage/precision = 外部正确性**——"抓得对不对"，facts 对比 oracle，需要标准答案。
+- **Hallucination = internal consistency** — "did it invent any number?" It compares the summary to the facts *it fetched*, so it needs no oracle at all.
+  **hallucination = 内部一致性**——"有没有编造"，摘要对比*它自己抓的* facts，完全不需要标准答案。
+
+This is why the hard **implicit** questions ("profitability") are marked *open-ended*: there's no single correct (metric, frequency), so coverage/precision are N/A — but the agent is still scored on provenance (real, traceable data) and hallucination (no invented numbers). Fabricated data can only appear in the LLM's prose, never in the deterministic facts, so the verifier catches it with or without coverage/precision.
+
+这正是为什么刁难里的**隐式**题（"profitability"）被标成*开放题*：没有唯一的（指标、频率）正确答案，所以 coverage/precision 记 N/A——但仍对 provenance（真实可溯源数据）和 hallucination（无编造数字）打分。编造数据只能出现在 LLM 的文字里，永远进不了确定性的 facts，所以无论测不测 coverage/precision，verifier 都能抓到它。
+
 ### 怎么解读这些数字 / How to read the numbers
 
 Coverage alone is flattering — it would have missed the ticker-leak bug (the right numbers *plus* an extra wrong company), which precision caught. And because the oracle shares the extractor with the harness, "100% coverage" is partly self-consistency; the honest evidence is the trio of **precision** (no wrong data), **hallucinations = 0** (no invented numbers), and the **baseline gap** (11% vs 100%) together. The bare LLM's 11% is a handful of memorized figures for famous companies and zero everywhere else.
 
 只测 coverage 是讨好的——它会漏掉"答对了又答多了"（ticker 泄漏就是 precision 才抓到）。而且 oracle 和 harness 共用 extractor，所以"100% 覆盖率"部分是自洽；真正证明价值的证据是**精度（无错数据）+ 幻觉=0（无编造数）+ baseline 差距（11% vs 100%）三者一起**。裸 LLM 的 11% 是对知名公司的几个背下来的数字，其余全是 0。
+
+The hard questions show the real picture: on straightforward questions the agent is ~100%; on multi-hop questions it occasionally drops (the LLM's tool decisions are non-deterministic); on the no-data trap it correctly returns "no data" instead of guessing; and on open-ended questions it fetches real, traceable data without inventing anything. So "100%" is only ever meaningful *within* the closed-question categories — the adversarial ones are what actually exercise the agent's judgment.
+
+刁难题才看到真实情况：常规题 agent 接近 100%；多跳题偶发掉分（LLM 工具决策有随机性）；无数据陷阱题它正确返回"无数据"而不是猜；开放题它抓真实可溯源数据、不编造。所以"100%"只在封闭题范畴内有意义——真正考验 agent 判断力的是刁难题。
 
 ## 诚实的局限 / Honest limitations
 - **Attribution is line-granular** — a swapped pair of numbers inside one line isn't caught; finer detection would need clause-level splitting. / 归属校验是行粒度，一行内两个数字对调分辨不出，更细要拆到从句级。
