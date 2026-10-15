@@ -33,7 +33,9 @@ AGENT_SYSTEM = (
     "Always output only the answer itself — never meta-commentary, acknowledgments, "
     "or explanations of what you changed or corrected. "
     "Choose the tool's n by question type: n=1 for a current-state question "
-    "(health, position, 'as of', 'latest'), n=4 for a trend over time."
+    "(health, position, 'as of', 'latest'), n=4 for a trend over time. "
+    "When the question names an explicit count, use it: 'last 2 quarters' -> n=2; "
+    "'last 2 fiscal years' -> n=2 and frequency='annual'."
 )
 
 TOOL_SCHEMAS = [
@@ -57,10 +59,14 @@ TOOL_SCHEMAS = [
                         "shares_outstanding"
                     ),
                 },
-                "frequency": {"type": "string", "enum": ["quarterly", "annual"]},
+                "frequency": {
+                    "type": "string",
+                    "enum": ["quarterly", "annual"],
+                    "description": "quarterly for quarters; annual for 'fiscal years'/'full year'.",
+                },
                 "n": {
                     "type": "integer",
-                    "description": "1 = latest snapshot; 4 = recent trend (default 4).",
+                    "description": "number of periods. 'last N quarters'/'last N fiscal years' -> n=N; 1 = latest snapshot; 4 = recent trend (default 4).",
                 },
             },
             "required": ["ticker", "metrics"],
@@ -74,8 +80,15 @@ TOOL_SCHEMAS = [
             "properties": {
                 "tickers": {"type": "array", "items": {"type": "string"}},
                 "metrics": {"type": "array", "items": {"type": "string"}},
-                "frequency": {"type": "string", "enum": ["quarterly", "annual"]},
-                "n": {"type": "integer"},
+                "frequency": {
+                    "type": "string",
+                    "enum": ["quarterly", "annual"],
+                    "description": "quarterly for quarters; annual for 'fiscal years'/'full year'.",
+                },
+                "n": {
+                    "type": "integer",
+                    "description": "number of periods; 'last N quarters/years' -> n=N (default 4).",
+                },
             },
             "required": ["tickers", "metrics"],
         },
