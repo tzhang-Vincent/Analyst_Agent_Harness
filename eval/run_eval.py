@@ -1,19 +1,23 @@
 """Run the evaluation.
 
-Metrics:
+The **harness is measured as the full product** — ``Analyst`` with the LLM wired
+in, i.e. intent parsing + deterministic EDGAR extraction + LLM summary + the
+verifier gate. Metrics on the final answer:
 
-- **harness value accuracy** — fraction of oracle (EDGAR) values the harness
-  reproduces. Expected ~100%: the harness's numbers are deterministic.
-- **harness provenance coverage** — fraction of its facts carrying a filing
-  link. Expected 100%.
-- **baseline value accuracy** — same fraction for a bare LLM answering from
-  memory with no tools. This is the "ChatGPT" equivalent, and it should be far
-  lower because the model has no way to pull real filings.
+- **coverage (recall)** — fraction of EDGAR-oracle values present in the answer.
+- **precision** — fraction of the answer's values that are actually in the oracle
+  (catches wrong/extra companies or metrics).
+- **provenance** — fraction of facts carrying a filing link.
+- **hallucinations** — number of unsupported numbers the verifier caught and
+  removed from the LLM-written summary (0 = the LLM stayed within the facts).
+
+The **bare-LLM baseline** is the same model with no harness, forced to answer
+from memory — the "ChatGPT" equivalent.
 
 Run::
 
-    python -m eval.run_eval                 # harness + provenance only
-    python -m eval.run_eval --baseline      # also the bare-LLM baseline (needs a key)
+    python -m eval.run_eval              # full harness (LLM summary if a key is set)
+    python -m eval.run_eval --baseline   # also the bare-LLM baseline
 """
 
 from __future__ import annotations
@@ -31,7 +35,7 @@ from agent.verifier import extract_numbers
 
 from .ground_truth import build_oracle
 from .questions import QUESTIONS
-from .report import EvalRow, provenance_coverage, summarize, value_coverage
+from .report import EvalRow, provenance_coverage, summarize, value_coverage, value_precision
 
 console = Console()
 
@@ -52,48 +56,63 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--baseline", action="store_true",
                    help="also run the bare-LLM baseline (requires an LLM key).")
+    p.add_argument("--limit", type=int, default=None,
+                   help="run only the first N questions.")
     p.add_argument("--provider", choices=["anthropic", "openai", "deepseek"])
     p.add_argument("--model")
     args = p.parse_args(argv)
 
-    llm: LLM | None = None
-    if args.baseline and is_configured(args.provider):
-        llm = LLM(args.provider, args.model)
-    elif args.baseline:
-        console.print("[yellow]--baseline requested but no LLM key configured; skipping.[/yellow]")
+    llm: LLM | None = LLM(args.provider, args.model) if is_configured(args.provider) else None
+    if llm is None:
+        console.print("[yellow]No LLM key configured; harness runs deterministic (no LLM summary).[/yellow]")
+
+    questions = QUESTIONS if args.limit is None else QUESTIONS[: args.limit]
 
     rows: list[EvalRow] = []
     with EdgarClient() as client:
-        analyst = Analyst(client=client, memory=Memory("data/eval_memory"))
-        for q in QUESTIONS:
+        analyst = Analyst(client=client, memory=Memory("data/eval_memory"), llm=llm)
+        for q in questions:
             oracle = build_oracle(client, q)
             oracle_values = [o.value for o in oracle]
 
             answer = analyst.run(q.text)
-            harness_values = [f.provenance.value for f in answer.facts]
-            hcov = value_coverage(harness_values, oracle_values)
+            values = [f.provenance.value for f in answer.facts]
+            hcov = value_coverage(values, oracle_values)
+            hprec = value_precision(values, oracle_values)
             prov = provenance_coverage(answer.facts)
+            halluc = answer.summary.count("[unverified]")
 
             bcov = None
-            if llm is not None:
+            if args.baseline and llm is not None:
                 bcov = value_coverage(_baseline_answer(llm, q.text), oracle_values)
 
-            rows.append(EvalRow(q.id, q.category, len(oracle_values), hcov, prov, bcov))
+            rows.append(
+                EvalRow(q.id, q.category, len(oracle_values), hcov, prov, hprec, halluc, bcov)
+            )
+            line = (
+                f"[{q.id}] coverage={hcov * 100:.0f}% precision={hprec * 100:.0f}% "
+                f"prov={prov * 100:.0f}% halluc={halluc}"
+                + (f" bare_llm={bcov * 100:.0f}%" if bcov is not None else "")
+            )
+            print(line, flush=True)
 
-    table = Table(title="Evaluation")
+    table = Table(title="Evaluation (full harness, with LLM)")
     table.add_column("Q", justify="right")
     table.add_column("Category")
-    table.add_column("Oracle values", justify="right")
-    table.add_column("Harness acc.", justify="right")
+    table.add_column("Oracle", justify="right")
+    table.add_column("Coverage", justify="right")
+    table.add_column("Precision", justify="right")
     table.add_column("Provenance", justify="right")
-    if llm is not None:
-        table.add_column("Baseline acc.", justify="right")
+    table.add_column("Halluc.", justify="right")
+    if args.baseline and llm is not None:
+        table.add_column("Bare LLM", justify="right")
     for r in rows:
         row = [
             r.question_id, r.category, str(r.oracle_values),
-            f"{r.harness_coverage * 100:.0f}%", f"{r.harness_provenance * 100:.0f}%",
+            f"{r.harness_coverage * 100:.0f}%", f"{r.harness_precision * 100:.0f}%",
+            f"{r.harness_provenance * 100:.0f}%", str(r.hallucinations),
         ]
-        if llm is not None:
+        if args.baseline and llm is not None:
             row.append(f"{r.baseline_coverage * 100:.0f}%" if r.baseline_coverage is not None else "—")
         table.add_row(*row)
     console.print(table)
@@ -101,9 +120,11 @@ def main(argv: list[str] | None = None) -> None:
     s = summarize(rows)
     console.print(
         f"\n[b]Overall[/b]: {s['questions']} questions — "
-        f"harness accuracy [green]{s['harness_accuracy'] * 100:.0f}%[/green], "
-        f"provenance [green]{s['harness_provenance'] * 100:.0f}%[/green]"
-        + (f", baseline accuracy [red]{s['baseline_accuracy'] * 100:.0f}%[/red]"
+        f"coverage [green]{s['harness_accuracy'] * 100:.0f}%[/green], "
+        f"precision [green]{s['harness_precision'] * 100:.0f}%[/green], "
+        f"provenance [green]{s['harness_provenance'] * 100:.0f}%[/green], "
+        f"hallucinations caught [green]{s['hallucinations']}[/green]"
+        + (f", bare-LLM coverage [red]{s['baseline_accuracy'] * 100:.0f}%[/red]"
            if s["baseline_accuracy"] is not None else "")
     )
 

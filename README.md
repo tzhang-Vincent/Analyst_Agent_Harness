@@ -114,25 +114,31 @@ gap produces "no data", never a guess.
 
 ## Evaluation
 
-`eval/` measures three things over a 15-question set spanning cross-quarter,
+`eval/` measures the **full harness — the LLM wired in** (intent parsing +
+deterministic EDGAR extraction + LLM-written summary + the verifier gate) —
+against the EDGAR oracle, over a 15-question set spanning cross-quarter,
 cross-company, single-metric, and annual queries:
 
 | Metric | Result |
 |---|---|
-| Harness value accuracy vs. EDGAR oracle | **100%** (15/15 questions) |
-| Harness provenance coverage | **100%** |
-| Bare-LLM baseline accuracy | **10%** (same model, no harness) |
+| Coverage (recall: oracle values present) | **100%** |
+| Precision (no extra wrong values) | **100%** |
+| Provenance coverage | **100%** |
+| Hallucinations caught by the verifier | **0** |
+| Bare-LLM baseline (same model, no harness) | **~10%** |
 
-Measured with `deepseek-v4-pro` (served via its Anthropic-compatible endpoint):
-the harness is 100% accurate with full provenance, while the *same model*
-answering from memory with no tools hits 10% — a 10× gap that is the whole point
-of the harness. The baseline metric is strict: it checks exact per-quarter
-figures within 1%, so a model that says "around $100B" scores 0 — analysts need
-exact, traceable numbers, not approximations.
+Measured with `deepseek-v4-pro` via its Anthropic-compatible endpoint. Coverage
+and precision are reported together because **coverage alone is not enough**: it
+would miss "the harness returned the right numbers *plus* extra wrong ones" (a
+ticker/metric leak). Precision catches that. The bare LLM answering from memory
+with no tools hits ~10% — a ~10× gap that is the whole point of the harness. The
+metric is strict (±1% on exact per-quarter figures), so "around $100B" scores 0:
+analysts need exact, traceable numbers.
 
 ```bash
-.venv/bin/python -m eval.run_eval              # harness accuracy + provenance
-.venv/bin/python -m eval.run_eval --baseline   # + bare-LLM baseline (needs a key)
+.venv/bin/python -m eval.run_eval                  # full harness (LLM summary)
+.venv/bin/python -m eval.run_eval --baseline       # + bare-LLM baseline
+.venv/bin/python -m eval.run_eval --baseline --limit 5   # quick subset
 ```
 
 The oracle is built with the same deterministic extractor straight from EDGAR.

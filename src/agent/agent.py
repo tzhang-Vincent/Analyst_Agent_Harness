@@ -58,10 +58,16 @@ _SPECIAL_PATTERNS = {
 
 def _extract_metrics(query_lower: str) -> list[str]:
     found: list[str] = []
-    for alias, key in ALIASES.items():
+    text = query_lower
+    # Longest alias first, and blank out the matched span, so "gross profit"
+    # does not also fire "profit" (net_income) or "earnings" inside
+    # "earnings per share".
+    for alias, key in sorted(ALIASES.items(), key=lambda kv: -len(kv[0])):
         pattern = _SPECIAL_PATTERNS.get(alias, r"\b" + re.escape(alias) + r"\b")
-        if re.search(pattern, query_lower) and key not in found:
+        m = re.search(pattern, text)
+        if m and key not in found:
             found.append(key)
+            text = text[: m.start()] + " " * (m.end() - m.start()) + text[m.end():]
     return found
 
 
@@ -100,7 +106,9 @@ def parse_intent(
         intent.num_periods = int(m.group(1))
 
     known = set(memory.watchlist if memory else []) | DEFAULT_TICKERS
-    candidates = _TICKER_RE.findall(query.upper())
+    # Strip possessives so "NVDA's" doesn't leak "S" as a 1-letter ticker.
+    cleaned = query.upper().replace("'S", " ").replace("'", " ")
+    candidates = _TICKER_RE.findall(cleaned)
     intent.tickers = _resolve_tickers(candidates, client, known)
     return intent
 

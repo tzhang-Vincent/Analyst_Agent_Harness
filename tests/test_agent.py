@@ -102,6 +102,22 @@ def test_parse_intent_rd_not_substring_match():
     assert "rd_expense" not in intent.metrics
 
 
+def test_parse_intent_possessive_apostrophe_does_not_leak_ticker():
+    # "NVDA's" must not leak "S" (a real 1-letter ticker) as a second company
+    intent = parse_intent("What was NVDA's revenue in the last 4 quarters?")
+    assert intent.tickers == ["NVDA"]
+
+
+def test_parse_intent_gross_profit_does_not_also_match_profit():
+    intent = parse_intent("AAPL gross profit over the last 4 quarters")
+    assert intent.metrics == ["gross_profit"]
+
+
+def test_parse_intent_earnings_per_share_not_net_income():
+    intent = parse_intent("MSFT earnings per share last 4 quarters")
+    assert intent.metrics == ["diluted_eps"]
+
+
 def test_run_zero_first_value_no_crash(tmp_path):
     data = {
         "entityName": "CO",
