@@ -121,6 +121,17 @@ This is where most of the real work went, and where a naive agent fails silently
 
 **Agent 模式**（默认）是真正的 agent loop。LLM 拿到工具定义，*自己决定*调哪个、传什么参数；harness 执行确定性抓取并把结果交回；循环到 LLM 写出最终答案。它能处理开放式、多步、或隐含的问题——"这几家谁营收增长最快？""英伟达资产负债表健康吗？"——这些固定流水线表达不了。
 
+The agent has exactly two tools, both funneling into the same deterministic extractor, so the LLM chooses *what* to fetch but never generates a number:
+
+Agent 只有两个工具，最终都汇到同一个确定性 extractor——LLM 选择*抓什么*，但从不生成数字：
+
+- `get_metrics(ticker, metrics, frequency, n)` — one company / 单公司
+- `compare_companies(tickers, metrics, frequency, n)` — several companies / 多公司
+
+Available `metrics` (each mapped to a set of XBRL tags with synonyms): `revenue`, `cost_of_revenue`, `gross_profit`, `rd_expense`, `operating_income`, `net_income`, `diluted_eps`, `total_assets`, `total_liabilities`, `cash`, `operating_cash_flow`, `shares_outstanding`.
+
+可选的 `metrics`（每个都映射到一组 XBRL tag 及同义词）：`revenue`、`cost_of_revenue`、`gross_profit`、`rd_expense`、`operating_income`、`net_income`、`diluted_eps`、`total_assets`、`total_liabilities`、`cash`、`operating_cash_flow`、`shares_outstanding`。
+
 **Pipeline mode** (`--mode pipeline`) is deterministic orchestration — parse intent, fetch, summarize, verify, in a fixed sequence. It's the cheap, reproducible, offline-capable baseline: simple "extract these metrics" queries are faster and can run with no LLM at all (`--no-llm`). It's also what the eval uses as its reference/oracle.
 
 **Pipeline 模式**（`--mode pipeline`）是确定性编排——解析意图、抓取、摘要、校验，固定顺序。它是便宜、可复现、能离线的底座：简单的"抓这些指标"查询更快，而且 `--no-llm` 完全不用 LLM。评测也拿它当参照/oracle。
