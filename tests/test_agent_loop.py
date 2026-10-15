@@ -1,4 +1,19 @@
-from agent.agent_loop import execute_tool
+from agent.agent_loop import _seed_messages, execute_tool
+
+
+def test_seed_messages_with_history():
+    history = [
+        {"role": "user", "content": "NVDA revenue"},
+        {"role": "assistant", "content": "NVDA revenue was ..."},
+    ]
+    msgs = _seed_messages("compare with AMD", history)
+    assert msgs[0] == {"role": "user", "content": "NVDA revenue"}
+    assert msgs[-1] == {"role": "user", "content": "compare with AMD"}
+    assert len(msgs) == 3
+
+
+def test_seed_messages_no_history():
+    assert _seed_messages("NVDA revenue", None) == [{"role": "user", "content": "NVDA revenue"}]
 
 
 class FakeClient:

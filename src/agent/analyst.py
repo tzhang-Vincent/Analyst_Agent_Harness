@@ -43,15 +43,15 @@ class Analyst:
     def last_intent(self):
         return self.pipeline.last_intent
 
-    def run(self, query: str) -> Answer:
+    def run(self, query: str, history: list[dict] | None = None) -> Answer:
         if self.mode == "agent" and self.llm is not None:
-            return self._run_agentic(query)
+            return self._run_agentic(query, history=history)
         return self.pipeline.run(query)
 
-    def _run_agentic(self, query: str) -> Answer:
+    def _run_agentic(self, query: str, history: list[dict] | None = None) -> Answer:
         """Agent mode: the LLM drives tool calls; the verifier still gates the answer."""
         summary_text, facts, citations = run_agent_loop(
-            self.llm, self.client, query, hints=self._agent_hints(query)
+            self.llm, self.client, query, hints=self._agent_hints(query), history=history
         )
 
         answer = Answer(summary=summary_text, facts=facts, citations=citations)

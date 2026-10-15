@@ -150,13 +150,24 @@ def _build_system(hints: list[str] | None) -> str:
     return "\n\n".join(parts)
 
 
+def _seed_messages(query: str, history: list[dict] | None) -> list[dict]:
+    """Initial messages for a turn: the conversation history + the new query."""
+    return list(history or []) + [{"role": "user", "content": query}]
+
+
 def run_agent_loop(
-    llm, client: EdgarClient, query: str, hints: list[str] | None = None
+    llm,
+    client: EdgarClient,
+    query: str,
+    hints: list[str] | None = None,
+    history: list[dict] | None = None,
 ) -> tuple[str, list[Fact], list[str]]:
     """Run the tool-calling loop; return ``(final_text, facts, citations)``.
 
     ``hints`` are extra lines appended to the system prompt — e.g. a matched
-    skill's metrics and the user's remembered corrections.
+    skill's metrics and the user's remembered corrections. ``history`` is the
+    prior conversation (``{"role": ..., "content": ...}`` turns), seeded ahead of
+    the new query so the LLM can resolve follow-up references ("compare with AMD").
     """
     import anthropic
 
@@ -165,7 +176,7 @@ def run_agent_loop(
         api_key=os.environ.get("ANTHROPIC_API_KEY"),
     )
     system = _build_system(hints)
-    messages: list[dict] = [{"role": "user", "content": query}]
+    messages: list[dict] = _seed_messages(query, history)
     all_facts: list[Fact] = []
     citations: list[str] = []
     final_text = ""

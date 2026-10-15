@@ -36,7 +36,40 @@ def build_parser() -> argparse.ArgumentParser:
                         "pipeline = deterministic orchestration.")
     p.add_argument("--no-llm", action="store_true",
                    help="Deterministic mode: no LLM, template summary only.")
+    p.add_argument("--chat", action="store_true",
+                   help="Enter an interactive conversation (agent mode).")
     return p
+
+
+def run_chat(args) -> None:
+    """Interactive multi-turn conversation (agent mode, with in-session history)."""
+    if not is_configured(args.provider):
+        console.print("[red]Chat mode needs an LLM key (set LLM_PROVIDER/LLM_MODEL + a key).[/red]")
+        return
+    analyst = Analyst(llm=LLM(args.provider, args.model), memory_dir=args.memory_dir, mode="agent")
+    history: list[dict] = []
+    console.print("[bold]Interactive conversation (agent mode).[/bold] "
+                  "Type 'exit' / 'quit' / 'q' to leave.")
+    while True:
+        try:
+            query = input("agent> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            break
+        if not query:
+            continue
+        if query.lower() in ("exit", "quit", "q"):
+            break
+        answer = analyst.run(query, history=history)
+        console.print()
+        console.print(answer.summary)
+        if answer.citations:
+            console.print("\n[bold]Sources[/bold] (clickable)")
+            for i, url in enumerate(answer.citations, 1):
+                console.print(f"  [{i}] [link={url}]{url}[/link]")
+        history.append({"role": "user", "content": query})
+        history.append({"role": "assistant", "content": answer.summary})
+        console.print()
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -47,6 +80,10 @@ def main(argv: list[str] | None = None) -> None:
         memory.record_correction(args.correct)
         memory.save()
         console.print(f"[green]Recorded correction:[/green] {args.correct}")
+        return
+
+    if args.chat:
+        run_chat(args)
         return
 
     if not args.query:
