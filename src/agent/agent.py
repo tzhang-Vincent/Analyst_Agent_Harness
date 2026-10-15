@@ -154,16 +154,21 @@ class Analyst:
         skills: dict[str, Skill] | None = None,
         memory_dir: str = "data/memory",
         use_llm_intent: bool = True,
+        mode: str = "pipeline",
     ) -> None:
         self.client = client or EdgarClient()
         self.memory = memory or Memory(memory_dir)
         self.llm = llm
         self.skills = skills if skills is not None else load_all()
         self.use_llm_intent = use_llm_intent
+        self.mode = mode  # "pipeline" (deterministic orchestration) | "agent" (LLM tool loop)
         self.last_facts_by_company: dict[str, dict[str, list[Fact]]] = {}
         self.last_intent: QueryIntent | None = None
 
     def run(self, query: str) -> Answer:
+        if self.mode == "agent" and self.llm is not None:
+            return self._run_agentic(query)
+
         intent = self._resolve(query)
         self.last_intent = intent
 
@@ -205,6 +210,38 @@ class Analyst:
         return answer
 
     # -- internals ---------------------------------------------------------
+    def _run_agentic(self, query: str) -> Answer:
+        """Agent mode: the LLM drives tool calls; the verifier still gates the answer."""
+        from .agent_loop import run_agent_loop
+
+        summary_text, facts = run_agent_loop(self.llm, self.client, query)
+
+        citations: list[str] = []
+        for f in facts:
+            u = f.provenance.source_url
+            if u and u not in citations:
+                citations.append(u)
+
+        answer = Answer(summary=summary_text, facts=facts, citations=citations)
+        issues = verify(answer)
+        if issues:
+            answer.summary = sanitize_summary(summary_text, facts)
+            answer.summary += (
+                "\n\n[verifier] flagged unsupported numeric claims "
+                "(shown as [unverified]):\n"
+                + "\n".join(f"  - {i}" for i in issues)
+            )
+
+        # Remember from the facts actually fetched (no explicit intent in this mode).
+        tickers = sorted({f.provenance.ticker for f in facts})
+        metrics = sorted({f.metric for f in facts})
+        self.memory.add_tickers(tickers)
+        for mk in metrics:
+            self.memory.bump_metric(mk)
+        self.memory.record_query(query, tickers, metrics)
+        self.memory.save()
+        return answer
+
     def _resolve(self, query: str) -> QueryIntent:
         det = parse_intent(query, self.memory, self.client)
         if self.llm is None or not self.use_llm_intent:

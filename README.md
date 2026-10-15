@@ -118,6 +118,15 @@ cannot ("profitability" → `net_income`). Every LLM ticker/metric is then valid
 against the SEC ticker map and the metric registry, and the deterministic rule
 parser is the fallback, so a mis-parse can never inject a wrong company or metric.
 
+**7. Two run modes.** `--mode pipeline` (default) is deterministic orchestration
+with the LLM at fixed steps (intent + summary). `--mode agent` is a true agent
+loop: the LLM is given tool definitions and *decides* which tool to call, the
+harness executes the deterministic extraction and returns the facts, and the loop
+repeats until the LLM writes the final answer (capped, then verifier-gated). Both
+modes keep the verifier as the final gate; agent mode is more "agentic" but its
+summaries can include *derived* numbers (a gap or growth rate the LLM computed),
+which the verifier flags as unsupported rather than a fetched fact.
+
 ## Evaluation
 
 `eval/` measures the **full harness — the LLM wired in** (intent parsing +
@@ -125,24 +134,28 @@ deterministic EDGAR extraction + LLM-written summary + the verifier gate) —
 against the EDGAR oracle, over a 15-question set spanning cross-quarter,
 cross-company, single-metric, and annual queries:
 
-| Metric | Result |
-|---|---|
-| Intent accuracy (LLM parsed the right tickers/metrics) | **100%** (15/15) |
-| Coverage (recall: oracle values present) | **100%** |
-| Precision (no extra wrong values) | **100%** |
-| Provenance coverage | **100%** |
-| Hallucinations caught by the verifier | **0** |
-| Bare-LLM baseline (same model, no harness) | **12%** |
+Both modes are measured over the same 15-question set against the EDGAR oracle
+(`deepseek-v4-pro` via its Anthropic-compatible endpoint, thinking disabled):
 
-Measured with `deepseek-v4-pro` via its Anthropic-compatible endpoint (thinking
-mode disabled for speed). Coverage and precision are reported together because
-**coverage alone is not enough**: it would miss "the harness returned the right
-numbers *plus* extra wrong ones" (a ticker/metric leak). Precision catches that.
-The bare LLM answering from memory with no tools hits ~12% (and 0% on most
-questions — its few hits are memorized figures for well-known companies) — a
-~8× gap that is the whole point of the harness. The metric is strict (±1% on
-exact per-quarter figures), so "around $100B" scores 0: analysts need exact,
-traceable numbers.
+| Metric | pipeline | agent | bare LLM |
+|---|---|---|---|
+| Coverage (recall: oracle values present) | **100%** | **100%** | **11%** |
+| Precision (no extra wrong values) | **100%** | **100%** | — |
+| Provenance coverage | **100%** | **100%** | 0% |
+| Intent accuracy (LLM parsed right tickers/metrics) | **100%** | — (LLM drives tools) | — |
+| Unsupported numbers the verifier caught | **0** | **17** | (all) |
+
+Coverage and precision are reported together because **coverage alone is not
+enough**: it would miss "the harness returned the right numbers *plus* extra
+wrong ones" (a ticker/metric leak). Precision catches that.
+
+The agent mode's 17 caught numbers are the LLM's *derived* values (a gap or
+growth rate it computed from the fetched facts), not fabrications — the verifier
+flags anything that is not itself a fetched fact, which is the provenance
+guarantee. The bare LLM answering from memory hits ~11% (mostly 0%, with a few
+memorized figures for well-known companies) — a ~9× gap that is the whole point
+of the harness. The metric is strict (±1% on exact per-quarter figures), so
+"around $100B" scores 0: analysts need exact, traceable numbers.
 
 ```bash
 .venv/bin/python -m eval.run_eval                  # full harness (LLM summary)
