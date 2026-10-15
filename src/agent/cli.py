@@ -48,8 +48,9 @@ def run_chat(args) -> None:
         return
     analyst = Analyst(llm=LLM(args.provider, args.model), memory_dir=args.memory_dir, mode="agent")
     history: list[dict] = []
-    console.print("[bold]Interactive conversation (agent mode).[/bold] "
-                  "Type 'exit' / 'quit' / 'q' to leave.")
+    last_answer = None
+    console.print("[bold]Interactive conversation (agent mode).[/bold]")
+    console.print("  'exit' / 'quit' / 'q' to leave; 'export <file.xlsx|csv>' to save the last answer.")
     while True:
         try:
             query = input("agent> ").strip()
@@ -60,13 +61,32 @@ def run_chat(args) -> None:
             continue
         if query.lower() in ("exit", "quit", "q"):
             break
+        if query.lower().startswith(("export ", "save ")):
+            if last_answer is None or not last_answer.facts:
+                console.print("[yellow]Nothing to export yet.[/yellow]")
+                continue
+            filename = query.split(None, 1)[1].strip()
+            path = filename
+            if not os.path.isabs(path):
+                os.makedirs(args.output_dir, exist_ok=True)
+                path = os.path.join(args.output_dir, path)
+            if path.endswith(".csv"):
+                to_csv(last_answer.facts, path)
+            else:
+                to_excel(group_facts(last_answer.facts), path)
+            console.print(f"[green]Exported to {path}[/green]")
+            continue
         answer = analyst.run(query, history=history)
+        last_answer = answer
         console.print()
         console.print(answer.summary, markup=False)
         if answer.citations:
             console.print("\n[bold]Sources[/bold] (clickable)")
             for i, url in enumerate(answer.citations, 1):
                 console.print(f"  [{i}] [link={url}]{url}[/link]")
+        if answer.facts:
+            console.print()
+            console.print(render_terminal(group_facts(answer.facts), title="Comparison"))
         history.append({"role": "user", "content": query})
         history.append({"role": "assistant", "content": answer.summary})
         console.print()
