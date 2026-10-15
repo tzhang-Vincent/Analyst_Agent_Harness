@@ -62,7 +62,7 @@ def run_chat(args) -> None:
             break
         answer = analyst.run(query, history=history)
         console.print()
-        console.print(answer.summary)
+        console.print(answer.summary, markup=False)
         if answer.citations:
             console.print("\n[bold]Sources[/bold] (clickable)")
             for i, url in enumerate(answer.citations, 1):
@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> None:
     analyst = Analyst(llm=llm, memory_dir=args.memory_dir, mode=args.mode)
     answer = analyst.run(args.query)
 
-    console.print(answer.summary)
+    console.print(answer.summary, markup=False)
 
     # Render the provenance sources as clickable links (OSC 8) in the terminal.
     if answer.citations:
