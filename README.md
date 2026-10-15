@@ -48,7 +48,7 @@ Here is the whole design in one map — each decision, why it was made, and wher
 | 两种模式：pipeline + agent / two modes | 简单查询要确定性、便宜、可离线；复杂/开放查询要灵活性 / simple queries want determinism and low cost; open-ended ones want flexibility | `analyst.py` |
 | verifier 双重校验（编造 + 归属错）/ verifier double-check | 不只是"数字在不在"，还要"挂在谁头上" / not just "is the number real", but "is it attached to the right company" | `verifier.py` |
 | LLM 意图 + 确定性兜底 / LLM intent with a deterministic fallback | 拿到灵活性，又不丢安全（LLM 解析错也注入不了错数据）/ flexibility without sacrificing safety | `pipeline.py` |
-| 记忆 + 技能 / memory + skills | 行业专精 + agent 随使用演进 / sector specialization and adaptation over time | `profile.py`, `skills.py` |
+| 记忆 + 技能 / memory + skills | 行业专精 + agent 随使用演进 / sector specialization and adaptation over time | `profile.py`, `skills/`（YAML） |
 
 Everything else in this document is a deeper look at these seven choices.
 
@@ -286,11 +286,12 @@ src/agent/
   edgar.py       SEC EDGAR client (rate-limited, cached, builds filing URLs)
   schema.py      Provenance / Fact / QueryIntent / Answer
   metrics.py     metric → XBRL-tag synonym registry
-  skills.py      analyst recipes (built-in + user YAML)
+  skills.py      skill loader; sector recipes live in skills/ (YAML)
   profile.py     user preference memory (3 JSON files)
   table.py       terminal table + xlsx/csv export
   llm.py         provider-agnostic LLM (anthropic/openai/deepseek)
   cli.py         CLI entry point
 eval/            questions, oracle, runner, metrics
-tests/           64 tests
+skills/          sector recipes (YAML)
+tests/           66 tests
 ```
