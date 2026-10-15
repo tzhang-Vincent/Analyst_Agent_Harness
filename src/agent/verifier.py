@@ -45,6 +45,18 @@ def extract_numbers(text: str) -> list[float]:
     ]
 
 
+def unsupported_numbers(
+    text: str, facts: list[Fact], tolerance_frac: float = 0.01
+) -> list[float]:
+    """Financial numbers in ``text`` not backed by any fact value."""
+    fact_values = {f.provenance.value for f in facts}
+    return [
+        num
+        for num in extract_numbers(text)
+        if not any(abs(num - v) <= abs(v) * tolerance_frac + 1 for v in fact_values)
+    ]
+
+
 def verify(answer: Answer, tolerance_frac: float = 0.01) -> list[str]:
     """Return a list of human-readable problems; empty means the answer is clean."""
     issues: list[str] = []

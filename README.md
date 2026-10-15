@@ -122,10 +122,10 @@ parser is the fallback, so a mis-parse can never inject a wrong company or metri
 with the LLM at fixed steps (intent + summary). `--mode agent` is a true agent
 loop: the LLM is given tool definitions and *decides* which tool to call, the
 harness executes the deterministic extraction and returns the facts, and the loop
-repeats until the LLM writes the final answer (capped, then verifier-gated). Both
-modes keep the verifier as the final gate; agent mode is more "agentic" but its
-summaries can include *derived* numbers (a gap or growth rate the LLM computed),
-which the verifier flags as unsupported rather than a fetched fact.
+repeats until the LLM writes the final answer. In agent mode the verifier runs
+*inside* the loop as a mandatory feedback step — the LLM cannot skip it — so an
+unsupported number (e.g. a gap the LLM computed) is fed back and the LLM revises.
+A final hard gate still sanitizes whatever remains.
 
 ## Evaluation
 
@@ -143,19 +143,19 @@ Both modes are measured over the same 15-question set against the EDGAR oracle
 | Precision (no extra wrong values) | **100%** | **100%** | — |
 | Provenance coverage | **100%** | **100%** | 0% |
 | Intent accuracy (LLM parsed right tickers/metrics) | **100%** | — (LLM drives tools) | — |
-| Unsupported numbers the verifier caught | **0** | **17** | (all) |
+| Unsupported numbers the verifier caught | **0** | **0** | (all) |
 
 Coverage and precision are reported together because **coverage alone is not
 enough**: it would miss "the harness returned the right numbers *plus* extra
 wrong ones" (a ticker/metric leak). Precision catches that.
 
-The agent mode's 17 caught numbers are the LLM's *derived* values (a gap or
-growth rate it computed from the fetched facts), not fabrications — the verifier
-flags anything that is not itself a fetched fact, which is the provenance
-guarantee. The bare LLM answering from memory hits ~11% (mostly 0%, with a few
-memorized figures for well-known companies) — a ~9× gap that is the whole point
-of the harness. The metric is strict (±1% on exact per-quarter figures), so
-"around $100B" scores 0: analysts need exact, traceable numbers.
+In agent mode the verifier runs inside the loop as a mandatory feedback step, so
+the LLM revises any derived value (a gap or growth rate it computed) into a
+ratio or drops it — hence 0 unsupported numbers survive to the final answer. The
+bare LLM answering from memory hits ~11% (mostly 0%, with a few memorized figures
+for well-known companies) — a ~9× gap that is the whole point of the harness. The
+metric is strict (±1% on exact per-quarter figures), so "around $100B" scores 0:
+analysts need exact, traceable numbers.
 
 ```bash
 .venv/bin/python -m eval.run_eval                  # full harness (LLM summary)

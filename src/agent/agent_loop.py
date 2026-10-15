@@ -18,6 +18,7 @@ from .edgar import EdgarClient
 from .extractor import extract_metrics
 from .metrics import canonical_metric, metric_label
 from .schema import Fact
+from .verifier import unsupported_numbers
 
 MAX_ITERATIONS = 6
 
@@ -136,7 +137,7 @@ def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact
     all_facts: list[Fact] = []
     final_text = ""
 
-    for _ in range(MAX_ITERATIONS):
+    for iteration in range(MAX_ITERATIONS):
         kwargs = {
             "model": llm.model,
             "max_tokens": 4096,
@@ -152,18 +153,32 @@ def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact
         text = "".join(
             getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text"
         )
-        if not tool_uses:
+        if tool_uses:
+            messages.append({"role": "assistant", "content": resp.content})
+            tool_results = []
+            for tu in tool_uses:
+                result = execute_tool(tu.name, dict(tu.input or {}), client)
+                all_facts.extend(result["facts"])
+                tool_results.append(
+                    {"type": "tool_result", "tool_use_id": tu.id, "content": result["text"]}
+                )
+            messages.append({"role": "user", "content": tool_results})
+            continue
+
+        # Draft answer with no tool calls: run the verifier as a mandatory
+        # feedback step. Unsupported numbers are fed back for revision (the LLM
+        # cannot skip this), and the final hard gate still sanitizes afterward.
+        bad = unsupported_numbers(text, all_facts)
+        if not bad or iteration >= MAX_ITERATIONS - 1:
             final_text = text
             break
 
+        feedback = (
+            "The following numbers in your answer are NOT in the fetched data: "
+            + ", ".join(f"{n:,.0f}" for n in bad)
+            + ". Revise your answer to remove them or only cite the fetched values."
+        )
         messages.append({"role": "assistant", "content": resp.content})
-        tool_results = []
-        for tu in tool_uses:
-            result = execute_tool(tu.name, dict(tu.input or {}), client)
-            all_facts.extend(result["facts"])
-            tool_results.append(
-                {"type": "tool_result", "tool_use_id": tu.id, "content": result["text"]}
-            )
-        messages.append({"role": "user", "content": tool_results})
+        messages.append({"role": "user", "content": feedback})
 
     return final_text, all_facts
