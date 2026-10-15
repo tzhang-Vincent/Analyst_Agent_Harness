@@ -108,7 +108,12 @@ Then run it in agent mode — the LLM decides which data to fetch, so it handles
 .venv/bin/agent "compare NVDA and AMD revenue over the last 4 quarters"
 .venv/bin/agent "which of NVDA, AMD and INTC grew revenue fastest last quarter?"
 .venv/bin/agent "is NVDA's balance sheet healthy?"
+.venv/bin/agent --chat      # 多轮对话
 ```
+
+`agent --chat` enters a multi-turn conversation: follow-ups like "compare with AMD" refer back to the previous turn, each turn prints the summary + clickable sources + a comparison table, and typing `export out.xlsx` dumps the last answer to Excel (comparison grid + provenance sheet). `exit` leaves.
+
+`agent --chat` 进入多轮对话："跟 AMD 比"这类追问能指代上一轮；每轮打印摘要 + 可点击 Sources + 对比表；对话里输 `export out.xlsx` 把上一条答案导出成 Excel（对比表 + 溯源 sheet）；`exit` 退出。
 
 Agent mode (LLM-driven tool calls) is the default; with no key it degrades to the deterministic pipeline.
 
@@ -137,7 +142,7 @@ This is where most of the real work went, and where a naive agent fails silently
 
 ## 两种模式，各管一类问题 / Two modes, two kinds of questions
 
-**Agent mode** (default) is a genuine agent loop. The LLM is given tool definitions (`get_metrics`, `compare_companies`) and *decides* which to call and with what arguments; the harness executes the deterministic extraction and hands the facts back; the loop repeats until the LLM writes a final answer. This handles open-ended, multi-step, or implicit questions — "which of these companies grew revenue fastest?", "is NVDA's balance sheet healthy?" — that a fixed pipeline can't express.
+**Agent mode** (default) is a genuine agent loop. The LLM is given tool definitions (`get_metrics`, `compare_companies`) and *decides* which to call and with what arguments; the harness executes the deterministic extraction and hands the facts back; the loop repeats until the LLM writes a final answer. This handles open-ended, multi-step, or implicit questions — "which of these companies grew revenue fastest?", "is NVDA's balance sheet healthy?" — that a fixed pipeline can't express. It also runs as a multi-turn conversation (`agent --chat`), where follow-ups refer back to earlier turns.
 
 **Agent 模式**（默认）是真正的 agent loop。LLM 拿到工具定义，*自己决定*调哪个、传什么参数；harness 执行确定性抓取并把结果交回；循环到 LLM 写出最终答案。它能处理开放式、多步、或隐含的问题——"这几家谁营收增长最快？""英伟达资产负债表健康吗？"——这些固定流水线表达不了。
 
