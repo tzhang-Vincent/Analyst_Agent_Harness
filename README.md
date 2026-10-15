@@ -79,6 +79,12 @@ The `[1]` / `[2]` markers next to the numbers link to the Sources list, where ea
 
 数字旁的 `[1]`/`[2]` 对应下面的 Sources 列表，终端里 URL **可点击**（Cmd+点击）。导出到 Excel 后有两个 sheet：对比表（每个数值格内嵌超链接）+ `Provenance` sheet（每个数字一行、17 列溯源字段：tag、文件编号、提交日期、URL）。
 
+### 数字怎么和溯源对应起来 / How a number is tied to its source
+
+The `[n]` markers are not something the LLM invents — the *harness* assigns them. It keeps a deduplicated `[n] → URL` list, gives every fetched fact's source URL a number, and hands the LLM only the numbered values ("… $96.2B [2]"), never the raw URLs. The LLM quotes `[2]`; the harness maps it back to the URL for the clickable Sources list and the Excel provenance sheet. So the authoritative provenance lives in the structured facts and the harness-maintained citation list — the LLM's text is just a pointer and cannot fabricate a source.
+
+`[n]` 标记不是 LLM 编的——是 *harness* 分配的。它维护一张去重的 `[n] → URL` 表，给每个抓到的 fact 的 source_url 一个编号，只把带编号的数字（"… $96.2B [2]"）喂给 LLM，从不给原始 URL。LLM 引用 `[2]`，harness 再把它映射回 URL，用于可点击 Sources 和 Excel 溯源 sheet。所以权威溯源在结构化的 facts 和 harness 维护的 citation 表里——LLM 的文字只是指针，无法伪造来源。
+
 ## 快速开始 / Getting started
 
 ```bash
