@@ -80,6 +80,16 @@ LLM_BASE_URL=https://api.deepseek.com/anthropic
 ANTHROPIC_API_KEY=<your-key>
 ```
 
+Then run it in agent mode — the LLM decides which data to fetch, so it handles open-ended questions, not just "extract metric X":
+
+配好 key 后即可跑 agent 模式——LLM 自己决定抓什么数据，所以能处理开放式问题，不只是"抓 X 指标"：
+
+```bash
+.venv/bin/agent "compare NVDA and AMD revenue over the last 4 quarters"
+.venv/bin/agent "which of NVDA, AMD and INTC grew revenue fastest last quarter?"
+.venv/bin/agent "is NVDA's balance sheet healthy?"
+```
+
 Agent mode (LLM-driven tool calls) is the default; with no key it degrades to the deterministic pipeline.
 
 默认走 agent 模式（LLM 自主工具调用）；没配 key 时自动降级为确定性 pipeline。
