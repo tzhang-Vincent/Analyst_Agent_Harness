@@ -29,7 +29,9 @@ AGENT_SYSTEM = (
     "to fetch the real data first — never answer from memory or estimate a number. "
     "Then write a concise summary citing each number with its [n] reference "
     "(e.g. 'revenue was $46.7B [1]'). Do NOT paste source URLs in your answer — "
-    "use the [n] reference instead. If a tool returns no data, say so instead of guessing."
+    "use the [n] reference instead. If a tool returns no data, say so instead of guessing. "
+    "Always output only the answer itself — never meta-commentary, acknowledgments, "
+    "or explanations of what you changed or corrected."
 )
 
 TOOL_SCHEMAS = [
@@ -189,9 +191,10 @@ def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact
             break
 
         feedback = (
-            "Your answer has these problems:\n"
+            "Rewrite your answer so every number is a fetched fact attributed to "
+            "the right company/metric. Violations to fix:\n"
             + "\n".join(f"- {i}" for i in issues)
-            + "\nRevise your answer to fix them, citing only the fetched values."
+            + "\nOutput ONLY the rewritten answer."
         )
         messages.append({"role": "assistant", "content": resp.content})
         messages.append({"role": "user", "content": feedback})
