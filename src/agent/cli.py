@@ -24,9 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="LLM provider (default: $LLM_PROVIDER).")
     p.add_argument("--model", help="Model id (default: $LLM_MODEL).")
     p.add_argument("--memory-dir", default="data/memory", help="User memory directory.")
-    p.add_argument("--mode", choices=["pipeline", "agent"], default="pipeline",
-                   help="pipeline = deterministic orchestration (default); "
-                        "agent = LLM drives tool calls.")
+    p.add_argument("--mode", choices=["pipeline", "agent"], default="agent",
+                   help="agent = LLM drives tool calls (default); "
+                        "pipeline = deterministic orchestration.")
     p.add_argument("--no-llm", action="store_true",
                    help="Deterministic mode: no LLM, template summary only.")
     return p

@@ -118,14 +118,15 @@ cannot ("profitability" → `net_income`). Every LLM ticker/metric is then valid
 against the SEC ticker map and the metric registry, and the deterministic rule
 parser is the fallback, so a mis-parse can never inject a wrong company or metric.
 
-**7. Two run modes.** `--mode pipeline` (default) is deterministic orchestration
-with the LLM at fixed steps (intent + summary). `--mode agent` is a true agent
-loop: the LLM is given tool definitions and *decides* which tool to call, the
-harness executes the deterministic extraction and returns the facts, and the loop
-repeats until the LLM writes the final answer. In agent mode the verifier runs
-*inside* the loop as a mandatory feedback step — the LLM cannot skip it — so an
-unsupported number (e.g. a gap the LLM computed) is fed back and the LLM revises.
-A final hard gate still sanitizes whatever remains.
+**7. Two run modes.** `--mode agent` (default) is a true agent loop: the LLM is
+given tool definitions and *decides* which tool to call, the harness executes the
+deterministic extraction and returns the facts, and the loop repeats until the
+LLM writes the final answer. In agent mode the verifier runs *inside* the loop as
+a mandatory feedback step — the LLM cannot skip it — so an unsupported number
+(e.g. a gap the LLM computed) is fed back and the LLM revises. A final hard gate
+still sanitizes whatever remains. `--mode pipeline` is deterministic orchestration
+with the LLM at fixed steps (intent + summary); `--no-llm` runs it fully offline
+(deterministic data + template summary).
 
 ## Evaluation
 
