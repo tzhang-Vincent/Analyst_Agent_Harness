@@ -1,5 +1,11 @@
 from agent.schema import Answer, Fact, Provenance
-from agent.verifier import extract_numbers, parse_number, sanitize_summary, verify
+from agent.verifier import (
+    attribution_issues,
+    extract_numbers,
+    parse_number,
+    sanitize_summary,
+    verify,
+)
 
 
 def test_parse_number_compact():
@@ -65,6 +71,54 @@ def test_sanitize_summary_replaces_unsupported():
     cleaned = sanitize_summary(answer.summary, answer.facts)
     assert "$46.74B" in cleaned
     assert "$99.9B" not in cleaned
+    assert "[unverified]" in cleaned
+
+
+def _fact_for(ticker, metric, value):
+    return Fact(
+        metric=metric,
+        period="2025-07-27",
+        period_label="Q2 FY2026",
+        provenance=Provenance(
+            ticker=ticker,
+            cik="0001045810",
+            entity_name="CO",
+            xbrl_tag="Revenues",
+            xbrl_label="Revenues",
+            unit="USD",
+            value=value,
+            accession_number="a1",
+            source_url="https://www.sec.gov/Archives/edgar/data/1045810/a1/a1-index.htm",
+        ),
+    )
+
+
+def test_attribution_issues_catches_misattribution():
+    facts = [
+        _fact_for("NVDA", "revenue", 46743000000),
+        _fact_for("AMD", "revenue", 11540000000),
+    ]
+    # $46.74B is NVDA's revenue, but the prose attributes it to AMD
+    issues = attribution_issues("AMD revenue was $46.74B.", facts)
+    assert any("AMD" in i for i in issues)
+
+
+def test_attribution_issues_clean_when_correct():
+    facts = [
+        _fact_for("NVDA", "revenue", 46743000000),
+        _fact_for("AMD", "revenue", 11540000000),
+    ]
+    assert attribution_issues("NVDA revenue was $46.74B.", facts) == []
+    assert attribution_issues("AMD revenue was $11.54B.", facts) == []
+
+
+def test_sanitize_removes_misattributed_number():
+    facts = [
+        _fact_for("NVDA", "revenue", 46743000000),
+        _fact_for("AMD", "revenue", 11540000000),
+    ]
+    cleaned = sanitize_summary("AMD revenue was $46.74B.", facts)
+    assert "$46.74B" not in cleaned
     assert "[unverified]" in cleaned
 
 

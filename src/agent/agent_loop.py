@@ -18,7 +18,7 @@ from .edgar import EdgarClient
 from .extractor import extract_metrics
 from .metrics import canonical_metric, metric_label
 from .schema import Fact
-from .verifier import unsupported_numbers
+from .verifier import summary_issues
 
 MAX_ITERATIONS = 6
 
@@ -166,17 +166,17 @@ def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact
             continue
 
         # Draft answer with no tool calls: run the verifier as a mandatory
-        # feedback step. Unsupported numbers are fed back for revision (the LLM
-        # cannot skip this), and the final hard gate still sanitizes afterward.
-        bad = unsupported_numbers(text, all_facts)
-        if not bad or iteration >= MAX_ITERATIONS - 1:
+        # feedback step. Fabricated *and* misattributed numbers are fed back for
+        # revision (the LLM cannot skip this); the final hard gate still sanitizes.
+        issues = summary_issues(text, all_facts)
+        if not issues or iteration >= MAX_ITERATIONS - 1:
             final_text = text
             break
 
         feedback = (
-            "The following numbers in your answer are NOT in the fetched data: "
-            + ", ".join(f"{n:,.0f}" for n in bad)
-            + ". Revise your answer to remove them or only cite the fetched values."
+            "Your answer has these problems:\n"
+            + "\n".join(f"- {i}" for i in issues)
+            + "\nRevise your answer to fix them, citing only the fetched values."
         )
         messages.append({"role": "assistant", "content": resp.content})
         messages.append({"role": "user", "content": feedback})
