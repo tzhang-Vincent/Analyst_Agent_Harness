@@ -15,7 +15,7 @@ from .llm import LLM
 from .pipeline import PipelineRunner
 from .profile import Memory
 from .schema import Answer
-from .skills import Skill, load_all
+from .skills import Skill, load_all, match_skill
 from .verifier import sanitize_summary, verify
 
 
@@ -50,7 +50,26 @@ class Analyst:
 
     def _run_agentic(self, query: str) -> Answer:
         """Agent mode: the LLM drives tool calls; the verifier still gates the answer."""
-        summary_text, facts, citations = run_agent_loop(self.llm, self.client, query)
+        summary_text, facts, citations = run_agent_loop(
+            self.llm, self.client, query, hints=self._agent_hints(query)
+        )
+
+    def _agent_hints(self, query: str) -> list[str]:
+        """Extra system-prompt lines: a matched skill's metrics + remembered corrections."""
+        hints: list[str] = []
+        skill = match_skill(query, self.skills)
+        if skill and skill.metrics:
+            hints.append(
+                f"The user has a saved analysis recipe '{skill.name}' for this kind "
+                f"of question; prefer metrics: {', '.join(skill.metrics)}."
+            )
+        corrections = self.memory.recent_corrections()
+        if corrections:
+            hints.append(
+                "The user has previously requested: " + "; ".join(corrections)
+                + ". Respect these preferences."
+            )
+        return hints
 
         answer = Answer(summary=summary_text, facts=facts, citations=citations)
         issues = verify(answer)

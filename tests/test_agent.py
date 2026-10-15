@@ -195,6 +195,16 @@ def test_llm_intent_fallback_when_empty(tmp_path):
     assert intent.metrics == ["revenue"]
 
 
+def test_agent_hints_includes_skill_and_corrections(tmp_path):
+    client = ValidatingFakeClient(_qfacts())
+    memory = Memory(tmp_path)
+    memory.record_correction("I want annual data, not quarterly")
+    analyst = Analyst(client=client, memory=memory, llm=FakeLLM(_llm_resp({})))
+    hints = analyst._agent_hints("rd intensity of NVDA")
+    assert any("rd-intensity" in h for h in hints)  # matched skill
+    assert any("annual" in h for h in hints)        # remembered correction
+
+
 def test_run_zero_first_value_no_crash(tmp_path):
     data = {
         "entityName": "CO",

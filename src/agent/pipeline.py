@@ -219,6 +219,10 @@ class PipelineRunner:
             num_periods=fields.get("num_periods", det.num_periods),
         )
 
+    def _correction_hint(self) -> str:
+        corrections = self.memory.recent_corrections()
+        return ("\nUser preferences: " + "; ".join(corrections)) if corrections else ""
+
     def _llm_intent_fields(self, query: str) -> dict:
         """Ask the LLM to parse the query; return validated fields ({} on failure).
 
@@ -228,7 +232,7 @@ class PipelineRunner:
         try:
             resp = self.llm.chat(
                 [
-                    {"role": "system", "content": _INTENT_SYSTEM},
+                    {"role": "system", "content": _INTENT_SYSTEM + self._correction_hint()},
                     {"role": "user", "content": query},
                 ]
             )
@@ -325,7 +329,7 @@ class PipelineRunner:
             "exact dollar values as given, and be cited with its [n] reference. "
             "Never invent or estimate a number. Do not add numbers that are not in "
             "the data."
-        )
+        ) + self._correction_hint()
         user = f"Question: {intent.raw_query}\n\nData:\n{data}\n\nSummary:"
         resp = self.llm.chat(
             [{"role": "system", "content": system}, {"role": "user", "content": user}]

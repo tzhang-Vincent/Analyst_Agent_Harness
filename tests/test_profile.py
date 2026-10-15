@@ -37,3 +37,11 @@ def test_corrections(tmp_path):
     m = Memory(tmp_path)
     m.record_correction("I want annual data, not quarterly")
     assert m.corrections()[0]["feedback"] == "I want annual data, not quarterly"
+
+
+def test_recent_corrections(tmp_path):
+    m = Memory(tmp_path)
+    m.record_correction("annual data")
+    m.record_correction("use net income")
+    assert m.recent_corrections(1) == ["use net income"]
+    assert m.recent_corrections() == ["annual data", "use net income"]

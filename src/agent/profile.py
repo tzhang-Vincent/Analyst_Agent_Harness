@@ -85,6 +85,10 @@ class Memory:
     def corrections(self) -> list[dict]:
         return self.interactions.get("corrections", [])
 
+    def recent_corrections(self, n: int = 5) -> list[str]:
+        """The last ``n`` user corrections, as plain strings (for prompt injection)."""
+        return [c.get("feedback", "") for c in self.corrections()[-n:]]
+
     # -- knowledge --------------------------------------------------------
     def remember(self, key: str, value) -> None:
         self.knowledge[key] = value

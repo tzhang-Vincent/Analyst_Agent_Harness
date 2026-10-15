@@ -160,6 +160,17 @@ A detail worth noticing: even in agent mode, the verifier runs *inside* the loop
 
 值得注意的一点：即使在 agent 模式，verifier 也在循环内作为 LLM 无法跳过的强制步骤运行——每写完一版答案就逐个检查数字，只要有编造或归属错就喂回去重写。所以这里的"agentic"绝不等于"无人监督"。
 
+## 随时间适应用户 / Adapting to the user over time
+
+The agent adapts through four mechanisms, all persisted in plain JSON (`data/memory/`) and the user-editable `skills/` directory:
+
+agent 通过四个机制随时间适应，都持久化在普通 JSON（`data/memory/`）和用户可编辑的 `skills/` 目录里：
+
+1. **Watchlist accumulation / watchlist 累积** — every ticker the user queries is added to the watchlist; a vague query ("compare the chip stocks") then falls back to it. / 查过的新 ticker 自动进 watchlist，模糊查询默认落到它。
+2. **Preferred-metric prioritization / 偏好指标优先级** — metrics the user keeps asking for move to the front, so a metric-less query uses them first (a semiconductor analyst who always asks about R&D intensity sees it prioritized). / 常查的指标排前面，没显式说指标的查询优先用它们。
+3. **User corrections / 用户修正** — `agent --correct "I want annual data, not quarterly"` records a correction; it is injected into the LLM's prompt on every later query, so the preference sticks. / `agent --correct "..."` 记录修正，之后每次查询注入 prompt，偏好一直生效。
+4. **User-defined skills / 用户自定义 skill** — YAML recipes in `skills/` are matched by keyword and now steer *both* modes (their metrics become the agent's suggested metrics). / `skills/` 里的 YAML 配方按关键词匹配，现在两种模式都会用它（配方的指标成为 agent 的推荐指标）。
+
 ## 校验：不只查"数字在不在"，还查"挂在谁头上" / The verifier
 
 Two checks, both against the deterministic facts:

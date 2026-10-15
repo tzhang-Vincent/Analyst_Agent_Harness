@@ -8,6 +8,7 @@ from rich.console import Console
 
 from .analyst import Analyst
 from .llm import LLM, is_configured
+from .profile import Memory
 from .table import group_facts, render_terminal, to_csv, to_excel
 
 console = Console()
@@ -18,8 +19,10 @@ def build_parser() -> argparse.ArgumentParser:
         prog="agent",
         description="Financial research agent with full provenance tracking over SEC EDGAR.",
     )
-    p.add_argument("query", help="Natural-language research question.")
+    p.add_argument("query", nargs="?", help="Natural-language research question.")
     p.add_argument("-o", "--export", help="Write results to an .xlsx or .csv file.")
+    p.add_argument("--correct", help="Record a user correction/preference "
+                   "(e.g. 'I want annual data, not quarterly'), then exit.")
     p.add_argument("--provider", choices=["anthropic", "openai", "deepseek"],
                    help="LLM provider (default: $LLM_PROVIDER).")
     p.add_argument("--model", help="Model id (default: $LLM_MODEL).")
@@ -34,6 +37,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+
+    if args.correct:
+        memory = Memory(args.memory_dir)
+        memory.record_correction(args.correct)
+        memory.save()
+        console.print(f"[green]Recorded correction:[/green] {args.correct}")
+        return
+
+    if not args.query:
+        build_parser().print_help()
+        return
 
     llm = None
     if not args.no_llm and is_configured(args.provider):

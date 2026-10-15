@@ -145,14 +145,26 @@ def execute_tool(name: str, args: dict, client: EdgarClient) -> dict:
     return {"facts": _flatten(facts_by_company), "facts_by_company": facts_by_company}
 
 
-def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact], list[str]]:
-    """Run the tool-calling loop; return ``(final_text, facts, citations)``."""
+def _build_system(hints: list[str] | None) -> str:
+    parts = [AGENT_SYSTEM] + [h for h in (hints or []) if h]
+    return "\n\n".join(parts)
+
+
+def run_agent_loop(
+    llm, client: EdgarClient, query: str, hints: list[str] | None = None
+) -> tuple[str, list[Fact], list[str]]:
+    """Run the tool-calling loop; return ``(final_text, facts, citations)``.
+
+    ``hints`` are extra lines appended to the system prompt — e.g. a matched
+    skill's metrics and the user's remembered corrections.
+    """
     import anthropic
 
     aclient = anthropic.Anthropic(
         base_url=llm.base_url or None,
         api_key=os.environ.get("ANTHROPIC_API_KEY"),
     )
+    system = _build_system(hints)
     messages: list[dict] = [{"role": "user", "content": query}]
     all_facts: list[Fact] = []
     citations: list[str] = []
@@ -163,7 +175,7 @@ def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact
             "model": llm.model,
             "max_tokens": 4096,
             "messages": messages,
-            "system": AGENT_SYSTEM,
+            "system": system,
             "tools": TOOL_SCHEMAS,
         }
         if llm.thinking:
