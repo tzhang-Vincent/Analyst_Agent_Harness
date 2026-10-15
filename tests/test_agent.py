@@ -50,6 +50,16 @@ def test_parse_intent_extracts_tickers_metrics_periods():
     assert intent.num_periods == 4
 
 
+def test_parse_intent_snapshot_question_uses_one_period():
+    intent = parse_intent("NVDA financial health")
+    assert intent.num_periods == 1
+
+
+def test_parse_intent_explicit_period_overrides_snapshot():
+    intent = parse_intent("NVDA health over the last 4 quarters")
+    assert intent.num_periods == 4
+
+
 def test_parse_intent_annual():
     intent = parse_intent("NVDA annual revenue and net income")
     assert intent.frequency == "annual"

@@ -31,7 +31,9 @@ AGENT_SYSTEM = (
     "(e.g. 'revenue was $46.7B [1]'). Do NOT paste source URLs in your answer — "
     "use the [n] reference instead. If a tool returns no data, say so instead of guessing. "
     "Always output only the answer itself — never meta-commentary, acknowledgments, "
-    "or explanations of what you changed or corrected."
+    "or explanations of what you changed or corrected. "
+    "Choose the tool's n by question type: n=1 for a current-state question "
+    "(health, position, 'as of', 'latest'), n=4 for a trend over time."
 )
 
 TOOL_SCHEMAS = [
@@ -56,7 +58,10 @@ TOOL_SCHEMAS = [
                     ),
                 },
                 "frequency": {"type": "string", "enum": ["quarterly", "annual"]},
-                "n": {"type": "integer", "description": "number of periods (default 4)"},
+                "n": {
+                    "type": "integer",
+                    "description": "1 = latest snapshot; 4 = recent trend (default 4).",
+                },
             },
             "required": ["ticker", "metrics"],
         },

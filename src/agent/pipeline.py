@@ -54,10 +54,22 @@ _INTENT_SYSTEM = (
     "- metrics: canonical keys only, from revenue, net_income, gross_profit, "
     "operating_income, rd_expense, cost_of_revenue, total_assets, total_liabilities, "
     "cash, operating_cash_flow, diluted_eps, shares_outstanding; map user phrasing "
-    "to the closest key ('profitability' -> net_income); [] if none. "
-    "- num_periods: integer (default 4). "
+    "to the closest key ('profitability' -> net_income; 'financial health' -> "
+    "total_assets + total_liabilities + cash); [] if none. "
+    "- num_periods: integer — 1 for a current-state question ('health', 'position', "
+    "'as of', 'latest'), 4 for a trend over time (default 4). "
     "- frequency: 'quarterly' or 'annual'."
 )
+
+
+_SNAPSHOT_HINTS = (
+    "health", "position", "current", "latest", "as of", "balance sheet",
+    "liquidity", "solvency", "standing", "now",
+)
+
+
+def _has_snapshot_hint(q: str) -> bool:
+    return any(h in q for h in _SNAPSHOT_HINTS)
 
 
 def _parse_json_obj(text: str) -> dict:
@@ -125,6 +137,10 @@ def parse_intent(
     m = _PERIOD_RE.search(q)
     if m:
         intent.num_periods = int(m.group(1))
+    elif _has_snapshot_hint(q):
+        # A current-state question ("health", "position", "as of", "latest")
+        # wants the latest snapshot, not a time series.
+        intent.num_periods = 1
 
     known = set(memory.watchlist if memory else []) | DEFAULT_TICKERS
     # Strip possessives so "NVDA's" doesn't leak "S" as a 1-letter ticker.
