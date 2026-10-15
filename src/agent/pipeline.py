@@ -1,18 +1,10 @@
-"""The agentic harness: intent -> skill -> tools -> summary -> verify -> memory.
+"""The pipeline mode: deterministic orchestration with the LLM at fixed steps.
 
-Two run modes, deliberately layered:
+intent (rule + optional LLM, validated) -> skill -> deterministic extraction ->
+summary (template, or LLM constrained to the facts) -> verifier -> memory.
 
-- **Deterministic** (no LLM): intent is parsed by rule, the summary is a
-  template built from facts. Fully testable offline, and it is what the eval
-  oracle uses. Numbers are always correct because they come straight from EDGAR.
-- **LLM-assisted** (an LLM is configured): intent is still parsed by rule for
-  reliability, but the summary is written by the LLM *constrained to the facts*
-  and then re-checked by the verifier.
-
-Ruling: intent parsing is LLM-first when an LLM is present (for flexible
-phrasing the rule parser cannot handle), with the deterministic rule parser as
-fallback. Every LLM output is validated against the SEC ticker map and the
-metric registry, so an LLM mis-parse cannot inject a wrong company or metric.
+The numbers and their provenance come from the deterministic extractor; the LLM
+only parses intent and writes the summary, never generates a number.
 """
 
 from __future__ import annotations
@@ -25,8 +17,8 @@ from .extractor import extract_metrics
 from .llm import LLM
 from .metrics import ALIASES, canonical_metric, metric_label
 from .profile import Memory
-from .schema import Answer, Fact, QueryIntent
-from .skills import Skill, load_all, match_skill
+from .schema import Answer, QueryIntent
+from .skills import match_skill
 from .table import flatten, fmt_compact
 from .verifier import sanitize_summary, verify
 
@@ -36,15 +28,12 @@ _PERIOD_RE = re.compile(r"last (\d+)\s*(quarters?|years?|periods?)", re.IGNORECA
 
 # Words that look like 1-5 letter ticker candidates in a query but are almost
 # never meant as tickers there — English function words ("and" is also a real
-# ticker) plus financial terms ("cash", "net", "flow", ...). Filtered before
-# ticker resolution.
+# ticker) plus financial terms ("cash", "net", "flow", ...).
 _STOPWORDS = {
-    # function words
     "A", "AN", "AND", "ARE", "AS", "AT", "BE", "BY", "COMPARE", "EACH", "FOR",
     "FROM", "HOW", "IN", "IS", "IT", "LAST", "MUCH", "NEXT", "OF", "OR",
     "OVER", "PAST", "RECENT", "SHOW", "THAT", "THE", "THIS", "TO", "VS",
     "WAS", "WHAT", "WHICH", "WITH",
-    # financial terms
     "ASSETS", "CASH", "COST", "DEBT", "DILUTED", "EARNINGS", "EPS", "EQUITY",
     "EXPENSE", "EXPENSES", "FLOW", "GROSS", "GROWTH", "INCOME", "LIABILITIES",
     "MARGIN", "NET", "OPERATING", "OPERATIONS", "PROFIT", "RATIO", "RD",
@@ -145,30 +134,23 @@ def parse_intent(
     return intent
 
 
-class Analyst:
+class PipelineRunner:
     def __init__(
         self,
-        client: EdgarClient | None = None,
-        memory: Memory | None = None,
-        llm: LLM | None = None,
-        skills: dict[str, Skill] | None = None,
-        memory_dir: str = "data/memory",
+        client: EdgarClient,
+        memory: Memory,
+        llm: LLM | None,
+        skills: dict,
         use_llm_intent: bool = True,
-        mode: str = "pipeline",
     ) -> None:
-        self.client = client or EdgarClient()
-        self.memory = memory or Memory(memory_dir)
+        self.client = client
+        self.memory = memory
         self.llm = llm
-        self.skills = skills if skills is not None else load_all()
+        self.skills = skills
         self.use_llm_intent = use_llm_intent
-        self.mode = mode  # "pipeline" (deterministic orchestration) | "agent" (LLM tool loop)
-        self.last_facts_by_company: dict[str, dict[str, list[Fact]]] = {}
         self.last_intent: QueryIntent | None = None
 
     def run(self, query: str) -> Answer:
-        if self.mode == "agent" and self.llm is not None:
-            return self._run_agentic(query)
-
         intent = self._resolve(query)
         self.last_intent = intent
 
@@ -187,7 +169,6 @@ class Analyst:
             )
             for t in intent.tickers
         }
-        self.last_facts_by_company = facts_by_company
 
         summary, citations = self._summarize(intent, facts_by_company)
         answer = Answer(
@@ -198,7 +179,6 @@ class Analyst:
 
         issues = verify(answer)
         if issues:
-            # Actually remove any numeric claim with no backing fact.
             answer.summary = sanitize_summary(summary, answer.facts)
             answer.summary += (
                 "\n\n[verifier] flagged unsupported numeric claims "
@@ -209,39 +189,7 @@ class Analyst:
         self._remember(intent, query)
         return answer
 
-    # -- internals ---------------------------------------------------------
-    def _run_agentic(self, query: str) -> Answer:
-        """Agent mode: the LLM drives tool calls; the verifier still gates the answer."""
-        from .agent_loop import run_agent_loop
-
-        summary_text, facts = run_agent_loop(self.llm, self.client, query)
-
-        citations: list[str] = []
-        for f in facts:
-            u = f.provenance.source_url
-            if u and u not in citations:
-                citations.append(u)
-
-        answer = Answer(summary=summary_text, facts=facts, citations=citations)
-        issues = verify(answer)
-        if issues:
-            answer.summary = sanitize_summary(summary_text, facts)
-            answer.summary += (
-                "\n\n[verifier] flagged unsupported numeric claims "
-                "(shown as [unverified]):\n"
-                + "\n".join(f"  - {i}" for i in issues)
-            )
-
-        # Remember from the facts actually fetched (no explicit intent in this mode).
-        tickers = sorted({f.provenance.ticker for f in facts})
-        metrics = sorted({f.metric for f in facts})
-        self.memory.add_tickers(tickers)
-        for mk in metrics:
-            self.memory.bump_metric(mk)
-        self.memory.record_query(query, tickers, metrics)
-        self.memory.save()
-        return answer
-
+    # -- intent ------------------------------------------------------------
     def _resolve(self, query: str) -> QueryIntent:
         det = parse_intent(query, self.memory, self.client)
         if self.llm is None or not self.use_llm_intent:
@@ -300,6 +248,7 @@ class Analyst:
             out["num_periods"] = n
         return out
 
+    # -- summary -----------------------------------------------------------
     def _cite(self, citations: list[str], url: str | None) -> int:
         if url and url not in citations:
             citations.append(url)

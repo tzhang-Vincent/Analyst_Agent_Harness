@@ -6,7 +6,7 @@ import argparse
 
 from rich.console import Console
 
-from .agent import Analyst
+from .analyst import Analyst
 from .llm import LLM, is_configured
 from .table import group_facts, render_terminal, to_csv, to_excel
 

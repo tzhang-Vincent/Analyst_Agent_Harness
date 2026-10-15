@@ -1,4 +1,5 @@
-from agent.agent import Analyst, parse_intent
+from agent.analyst import Analyst
+from agent.pipeline import parse_intent
 from agent.profile import Memory
 
 
@@ -147,7 +148,7 @@ def test_llm_intent_overrides_and_fills_gaps(tmp_path):
     client = ValidatingFakeClient(_qfacts())
     llm = FakeLLM(_llm_resp({"tickers": ["NVDA", "MSFT"], "metrics": ["revenue", "net_income"], "num_periods": 3}))
     analyst = Analyst(client=client, memory=Memory(tmp_path), llm=llm)
-    intent = analyst._resolve("profitability of NVDA and MSFT")
+    intent = analyst.pipeline._resolve("profitability of NVDA and MSFT")
     assert intent.tickers == ["NVDA", "MSFT"]
     assert intent.metrics == ["revenue", "net_income"]
     assert intent.num_periods == 3
@@ -157,7 +158,7 @@ def test_llm_intent_invalid_ticker_dropped(tmp_path):
     client = ValidatingFakeClient(_qfacts())
     llm = FakeLLM(_llm_resp({"tickers": ["NVDA", "ZZZZ"], "metrics": ["revenue"]}))
     analyst = Analyst(client=client, memory=Memory(tmp_path), llm=llm)
-    intent = analyst._resolve("NVDA revenue")
+    intent = analyst.pipeline._resolve("NVDA revenue")
     assert intent.tickers == ["NVDA"]  # ZZZZ not a real ticker -> dropped
     assert intent.metrics == ["revenue"]
 
@@ -169,7 +170,7 @@ def test_llm_intent_fallback_on_error(tmp_path):
 
     client = ValidatingFakeClient(_qfacts())
     analyst = Analyst(client=client, memory=Memory(tmp_path), llm=BoomLLM())
-    intent = analyst._resolve("NVDA revenue last 2 quarters")
+    intent = analyst.pipeline._resolve("NVDA revenue last 2 quarters")
     assert intent.tickers == ["NVDA"]
     assert intent.metrics == ["revenue"]
     assert intent.num_periods == 2
@@ -179,7 +180,7 @@ def test_llm_intent_fallback_when_empty(tmp_path):
     client = ValidatingFakeClient(_qfacts())
     llm = FakeLLM(_llm_resp({"tickers": [], "metrics": []}))
     analyst = Analyst(client=client, memory=Memory(tmp_path), llm=llm)
-    intent = analyst._resolve("NVDA revenue last 2 quarters")
+    intent = analyst.pipeline._resolve("NVDA revenue last 2 quarters")
     assert intent.tickers == ["NVDA"]  # deterministic fallback
     assert intent.metrics == ["revenue"]
 

@@ -25,7 +25,7 @@ import argparse
 from rich.console import Console
 from rich.table import Table
 
-from agent.agent import Analyst
+from agent.analyst import Analyst
 from agent.edgar import EdgarClient
 from agent.llm import LLM, is_configured
 from agent.profile import Memory
