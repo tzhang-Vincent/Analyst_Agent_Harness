@@ -1,39 +1,77 @@
 # 金融研究 Agent · Financial Research Agent
 
-> An agentic harness that lets analysts ask questions in natural language and get back **summaries and comparison tables whose every number traces to the SEC filing it came from**. It targets the single most dangerous failure mode in finance: **hallucinated numbers**.
->
-> 一个 agentic harness：分析师用自然语言提问，得到**摘要 + 对比表，且每个数字都能追溯到它来自的 SEC 文件**。它专门针对金融场景最致命的问题——**LLM 幻觉出的数字**。
+A research agent for equity analysts that answers questions about public financial statements — and makes every number it states traceable back to the exact SEC filing it came from.
 
-## 核心思想 / The Core Idea
+面向股票分析师的金融研究 agent：能回答关于公开财报的问题，而且说出的每一个数字都能追溯到它来自的哪一份 SEC 文件。
 
-> **Deterministic data + LLM orchestration + full provenance.**
+---
+
+## 为什么做这个 / Why this exists
+
+Ask a bare LLM for NVIDIA's quarterly revenue and it will happily produce a number — confident, plausible, and sometimes flat wrong. For most uses that's a nuisance. For someone deciding whether to buy a stock, it's dangerous. The problem isn't that the model is "careless"; it's that it has no source of truth, so under pressure it fills the gap from its weights.
+
+直接问一个裸 LLM"英伟达上季度营收多少"，它会自信地给出一个数字——看起来合理，但有时是错的。对大多数场景这只是烦人；对做投资决策的人来说，这是危险。问题不在于模型"粗心"，而在于它没有事实来源，一旦被追问就只能从权重里"编"。
+
+The task here was to build an **agentic harness** that outperforms a bare chatbot on exactly this failure mode. My answer boils down to one move: **don't ask the LLM to be more careful — take number-generation away from it entirely.**
+
+这个任务要求构建一个 **agentic harness**，恰恰要在"幻觉数字"这个失败模式上击败裸聊天机器人。我的答案归结为一句话：**不要指望 LLM 更小心——而是把"生成数字"这件事从它手里彻底拿走。**
+
+## 核心思想 / The core idea
+
+> **Deterministic data, LLM orchestration, full provenance.**
 > **确定性数据 + LLM 编排 + 全链路溯源。**
 
-A naive LLM invents plausible numbers from its weights. This harness takes number-generation away from the model entirely:
+Every number in the answer is fetched **deterministically from SEC EDGAR's XBRL API**. The LLM's job is limited to three things: understand the question, decide which data to fetch, and turn the fetched numbers into readable prose. It never has the opportunity to invent a figure, because it's only ever handed real ones.
 
-- every figure is fetched **deterministically from SEC EDGAR's XBRL API**;
-- every figure carries a **provenance** record (ticker, CIK, XBRL tag, accession number, clickable URL);
-- the LLM only **understands the question, decides what to fetch, and arranges the numbers into prose**;
-- a **verifier gate** deletes any number with no backing fact or wrong attribution.
+答案里的每个数字都由 **SEC EDGAR 的 XBRL API 确定性抓取**。LLM 只做三件事：理解问题、决定抓什么、把抓到的数字组织成可读的摘要。它根本没有机会编数字，因为它拿到的从来都是真实的数。
 
-裸 LLM 从模型权重里"编"数字，看起来合理但是错的。这个 harness 把"生成数字"这件事从 LLM 手里彻底拿走：
+Two guarantees fall out of this design:
 
-- 所有财务数字由 **SEC EDGAR 的 XBRL API 确定性抓取**；
-- 每个数字背一条 **provenance**（ticker、CIK、XBRL tag、文件编号、可点击链接）；
-- LLM 只负责**理解问题、决定抓什么、把数字组织成摘要**；
-- 一个 **verifier 终检**：无来源或归属错的数字，直接从答案里删掉。
+这个设计带来两个保证：
 
-## 快速开始 / Quick Start
+1. **Correctness is architectural, not aspirational.** The numbers are right because they came from EDGAR, not because the model "tried hard".
+   **正确性是架构保证的，不是"模型努力"的结果**——数字对，是因为它来自 EDGAR。
+2. **Every number carries provenance.** A `Provenance` record — ticker, CIK, XBRL tag, fiscal period, filing accession number, filing date, and a clickable sec.gov URL — rides on every fact. If you can't click through to the source, the number doesn't ship.
+   **每个数字都带溯源**——`Provenance` 记录（ticker、CIK、XBRL tag、财季、文件编号、提交日期、可点击的 sec.gov 链接）挂在每个 fact 上。点不到来源的数字，根本不会出现。
+
+## 实际长什么样 / What it looks like
+
+A query and its output in the terminal:
+
+一条查询和它在终端里的输出：
+
+```
+$ agent "NVDA revenue and net income last 2 quarters"
+
+NVIDIA (NVDA) results for the last two quarters:
+
+| Period    | Revenue  | Net Income |
+|-----------|----------|------------|
+| Q1 FY2027 | $81.6B [1] | $58.3B [1] |
+| Q2 FY2027 | $96.2B [2] | $59.7B [2] |
+
+Sources (clickable)
+  [1] https://www.sec.gov/Archives/edgar/data/1045810/000104581026000052/...
+  [2] https://www.sec.gov/Archives/edgar/data/1045810/000104581026000075/...
+```
+
+The `[1]` / `[2]` markers next to the numbers link to the Sources list, where each URL is **clickable** in the terminal (Cmd-click). The same answer exported to Excel has two sheets: the comparison grid (each value cell hyperlinked to its filing) and a `Provenance` sheet with one row per number and 17 columns of traceability — tag, accession, filing date, and the URL.
+
+数字旁的 `[1]`/`[2]` 对应下面的 Sources 列表，终端里 URL **可点击**（Cmd+点击）。导出到 Excel 后有两个 sheet：对比表（每个数值格内嵌超链接）+ `Provenance` sheet（每个数字一行、17 列溯源字段：tag、文件编号、提交日期、URL）。
+
+## 快速开始 / Getting started
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e .            # or: pip install -r requirements.txt
 
-# deterministic mode — runs with no API key at all
+# deterministic mode — no API key needed at all
 .venv/bin/agent "NVDA revenue and net income last 2 quarters" -o out.xlsx --no-llm
 ```
 
-For LLM-written summaries (optional), create a `.env` (see `.env.example`). DeepSeek exposes an **Anthropic-compatible endpoint**, so `provider=anthropic` drives it directly:
+For LLM-written summaries, create a `.env` (see `.env.example`). DeepSeek exposes an Anthropic-compatible endpoint, so `provider=anthropic` drives it directly:
+
+要 LLM 摘要，建 `.env`（见 `.env.example`）。DeepSeek 提供 Anthropic 兼容端点，用 `provider=anthropic` 直接驱动：
 
 ```bash
 LLM_PROVIDER=anthropic
@@ -44,113 +82,106 @@ ANTHROPIC_API_KEY=<your-key>
 
 Agent mode (LLM-driven tool calls) is the default; with no key it degrades to the deterministic pipeline.
 
-要 LLM 摘要（可选），建 `.env`（见 `.env.example`）配 key。DeepSeek 提供 **Anthropic 兼容端点**，可用 `provider=anthropic` 直接驱动。默认走 **agent 模式**（LLM 自主工具调用）；没配 key 时自动降级为确定性 pipeline。
+默认走 agent 模式（LLM 自主工具调用）；没配 key 时自动降级为确定性 pipeline。
 
-## 使用示例 / Examples
+## 我实际踩过的数据坑 / The data problems I actually hit
 
-```bash
-.venv/bin/agent "compare NVDA and AMD revenue over the last 4 quarters"   # agent mode (default) / agent 模式（默认）
-.venv/bin/agent "NVDA financial health" --mode pipeline                   # snapshot → latest period / 快照类，只取最新一期
-.venv/bin/agent "MSFT annual revenue for the last 2 fiscal years" --no-llm
-.venv/bin/agent "compare NVDA AMD INTC net income" -o out.xlsx
-```
+This is where most of the real work went, and where a naive agent fails silently. SEC XBRL data is *messy*, and getting "the right number" means handling each of these:
 
-The Excel export has two sheets: **Comparison** (company × metric grid, each value cell hyperlinked to its filing) and **Provenance** (one row per number, 17 columns: ticker, metric, period, value, unit, XBRL tag, accession, filing date, source_url, …), so an analyst can double-check cell by cell.
+大部分工作量在这里，也是朴素 agent 会静默出错的地方。SEC 的 XBRL 数据很"脏"，要拿到"正确的数"就得逐个处理：
 
-Excel 导出含两个 sheet：**Comparison**（公司×指标对比表，数值格内嵌超链接）+ **Provenance**（每个数字一行，17 列溯源字段），分析师可逐格核对。
+**Synonym XBRL tags.** Companies switch the tag they report under. NVIDIA's revenue lives in `RevenueFromContractWithCustomerExcludingAssessedTax` through 2021, then moves back to plain `Revenues`. A naive agent that grabs "the first tag with enough data" returns 2019 numbers. My extractor picks the tag the company is *currently* filing — the one with the newest data.
+**同义 XBRL tag。** 公司会换上报用的 tag。英伟达的营收在 2021 年前用 `RevenueFromContractWithCustomerExcludingAssessedTax`，之后换回了简单的 `Revenues`。朴素 agent 若"取第一个数据够多的 tag"，会拿到 2019 年的旧数。我的 extractor 选的是公司*当前实际在用*的 tag（最新数据最靠前的那个）。
 
-## 设计决策 / Design Decisions
+**Restatements.** The same quarter appears multiple times — once in the original 10-Q, again restated in a later 10-K. You want the latest-filed value, not the original one.
+**重述。** 同一个季度会出现多次——原始 10-Q 报一次，后面的 10-K 再重述一次。要取的是 filed 最新的值，不是原始的。
 
-**1. Provenance is a first-class type / Provenance 是一等公民。**
-`Provenance` (in `src/agent/schema.py`) rides on every fact; a number without a source is never emitted.
-`Provenance` 挂在每个 fact 上，没有来源的数字根本不会产生。
+**Fiscal vs calendar years.** NVIDIA's fiscal year ends in late January, so SEC's calendar-quarter labels mislabel its fiscal quarters. "Q2 FY2026" is not what a calendar frame says. I infer the fiscal year-end month from annual filings and label periods from the end date instead of trusting the frame.
+**财年 vs 自然年。** 英伟达财年 1 月底结束，SEC 的自然年标签会把它的财季标错。"Q2 FY2026" 并不是自然年 frame 说的那样。我从年报推断财年结束月，用结束日期给期间贴标签，而不是信 frame。
 
-**2. Deterministic data layer / 确定性数据层（`src/agent/extractor.py`）。**
-Talks to SEC EDGAR directly (rate-limited, cached, required User-Agent) and handles the real-world data traps: **synonym XBRL tags** (companies switch tags — NVDA moved revenue from `...ExcludingAssessedTax` back to `Revenues`); **restatements** (keep the latest-filed value); **fiscal vs calendar years** (infer the fiscal year-end month so "Q2 FY2026" is labeled correctly); **instant vs duration facts** (balance-sheet points vs income-statement flows, the latter also dropping YTD cumulative facts).
-直连 SEC EDGAR，处理真实数据的坑：同义 tag 切换、重述取最新 filed、财年标签、时点型/期间型（顺带剔除 YTD 累计数）。
+**Instant vs duration facts.** Balance-sheet items (assets, cash) are point-in-time; income-statement items are flows over a period. Filter by ~13-week duration and you correctly drop YTD cumulative facts (6-month, 9-month) — but you'd also throw away every balance-sheet number. The extractor treats the two kinds separately.
+**时点型 vs 期间型。** 资产负债表项目（资产、现金）是时点；利润表项目是一段时间的流量。按 ~13 周时长过滤，能正确剔除 YTD 累计数（6 个月、9 个月），但也会把资产负债表数据全丢掉——所以 extractor 把两类分开处理。
 
-**3. Tools vs skills, two layers / 工具 vs 技能，两层。**
-Tools are atomic data primitives; skills (`src/agent/skills.py`) are reusable analyst recipes bundling sector knowledge + a tool sequence + an output template. Users add YAML recipes in `skills/` — this is where sector specialization and adaptation over time live.
-工具是原子数据原语；技能是可复用分析师配方（行业知识 + 工具序列 + 输出模板），用户可在 `skills/` 加 YAML——行业专精和随使用演进的落点。
+**Companies that don't file a tag.** AMD doesn't report a standalone `Liabilities` concept (only `LiabilitiesAndStockholdersEquity`). The right answer here is "no data", not a substitute number — and that's what the harness returns.
+**公司不披露某个 tag。** AMD 不单独披露 `Liabilities`（只有 `LiabilitiesAndStockholdersEquity`）。正确答案是"无数据"，而不是拿别的数顶替——harness 就是这么做的。
 
-**4. Two run modes / 两种运行模式。**
-`--mode agent` (default) is a true agent loop: the LLM gets tool definitions and *decides* which to call, the harness runs deterministic extraction and returns the facts, looping until the LLM writes the final answer. `--mode pipeline` is deterministic orchestration (intent → extract → summarize → verify). Both share the same data layer and verifier.
-`--mode agent`（默认）是真正的 agent loop；`--mode pipeline` 是确定性编排的固定流水线。两者共享数据层和 verifier。
+## 两种模式，各管一类问题 / Two modes, two kinds of questions
 
-**5. Verifier double-check / Verifier 双重校验（`src/agent/verifier.py`）。**
-① **Fabrication** — a number not close to any fact; ② **Attribution** — a number attached to the wrong company/metric ("AMD revenue $96B" when it is NVDA's). In agent mode the verifier runs *inside* the loop as a mandatory feedback step (the LLM cannot skip it) and a hard gate sanitizes whatever survives.
-①编造（数字不在任何 fact 里）②归属错（数字挂在错误的公司/指标上）。agent 模式里循环内强制反馈 + 循环外硬闸兜底。
+**Agent mode** (default) is a genuine agent loop. The LLM is given tool definitions (`get_metrics`, `compare_companies`) and *decides* which to call and with what arguments; the harness executes the deterministic extraction and hands the facts back; the loop repeats until the LLM writes a final answer. This handles open-ended, multi-step, or implicit questions — "which of these companies grew revenue fastest?", "is NVDA's balance sheet healthy?" — that a fixed pipeline can't express.
 
-**6. LLM intent parsing + deterministic fallback / LLM 解析意图 + 确定性兜底。**
-Intent is LLM-first for flexible phrasing ("profitability" → `net_income`), but every LLM ticker/metric is validated against the SEC map and the metric registry, with the rule parser as fallback — an LLM mis-parse cannot inject a wrong company or metric.
-意图解析 LLM 优先，但每个输出都过 SEC/词表校验，规则解析兜底。
+**Agent 模式**（默认）是真正的 agent loop。LLM 拿到工具定义，*自己决定*调哪个、传什么参数；harness 执行确定性抓取并把结果交回；循环到 LLM 写出最终答案。它能处理开放式、多步、或隐含的问题——"这几家谁营收增长最快？""英伟达资产负债表健康吗？"——这些固定流水线表达不了。
 
-**7. User preference memory / 用户偏好记忆（`src/agent/profile.py`）。**
-Three JSON memories — preferences (watchlist, preferred metrics), interactions (query history, corrections), knowledge — persisted incrementally after each query, so new tickers join the watchlist and frequently-used metrics are prioritized.
-三类 JSON 记忆（偏好/交互/领域知识），每次查询后增量写回。
+**Pipeline mode** (`--mode pipeline`) is deterministic orchestration — parse intent, fetch, summarize, verify, in a fixed sequence. It's the cheap, reproducible, offline-capable baseline: simple "extract these metrics" queries are faster and can run with no LLM at all (`--no-llm`). It's also what the eval uses as its reference/oracle.
 
-## 溯源机制 / Provenance
+**Pipeline 模式**（`--mode pipeline`）是确定性编排——解析意图、抓取、摘要、校验，固定顺序。它是便宜、可复现、能离线的底座：简单的"抓这些指标"查询更快，而且 `--no-llm` 完全不用 LLM。评测也拿它当参照/oracle。
 
-Three renderings form a "verifiable" loop / 三处呈现形成"可核对"闭环：
+A detail worth noticing: even in agent mode, the verifier runs *inside* the loop as a mandatory step the LLM can't skip — after each draft answer it checks every number, and if any is fabricated or attributed to the wrong company, that's fed back for a rewrite. So "agentic" here never means "unsupervised".
 
-| 场景 / Where | 呈现 / How |
-|---|---|
-| CLI | `[n]` inline references after numbers + **clickable** numbered Sources (OSC 8 hyperlinks) |
-| Excel | Comparison cells hyperlinked + Provenance sheet (17 columns) |
-| CSV | flat, with a source_url column |
+值得注意的一点：即使在 agent 模式，verifier 也在循环内作为 LLM 无法跳过的强制步骤运行——每写完一版答案就逐个检查数字，只要有编造或归属错就喂回去重写。所以这里的"agentic"绝不等于"无人监督"。
 
-The `[n]` numbering is maintained by the **harness** (not the LLM) — the LLM only sees the numbers, never the URLs, so it cannot fabricate provenance.
-`[n]` 编号表由 **harness 维护**，LLM 只看到编号、看不到 URL，无法编造来源。
+## 校验：不只查"数字在不在"，还查"挂在谁头上" / The verifier
 
-## 评测 / Evaluation
+Two checks, both against the deterministic facts:
 
-**Controlled comparison**: same model `deepseek-v4-pro`, harness on vs off, 15 questions (cross-quarter / cross-company / single-metric / annual), all against the same EDGAR oracle (the deterministic extractor's ground truth):
+两道检查，都以确定性 fact 为基准：
 
-**受控对比**：同一模型，只变 harness 开/关，15 题四类，都对比同一份 EDGAR oracle：
+- **Fabrication** — a number not close to any fetched fact (a hallucinated or derived figure).
+  **编造**——数字不在任何抓取的 fact 值附近（幻觉或推算值）。
+- **Attribution** — a number that exists, but is attached to the wrong company/metric in the prose ("AMD revenue $96B" when $96B is NVIDIA's). The verifier splits the text into claims, detects which tickers/metrics each line names, and requires the number to match a fact for *those* entities.
+  **归属错**——数字存在，但挂在错误的公司/指标上（"AMD 营收 $96B"，其实是英伟达的）。verifier 把文本拆成行，检测每行提到的 ticker/指标，要求数字匹配*那些*实体的 fact。
 
-| Metric / 指标 | agent | pipeline | bare LLM / 裸 LLM |
+Anything that fails either check is physically removed from the answer, not just flagged.
+
+任何一道没过，数字就被从答案里物理删除，不是只标个警告。
+
+## 评测：怎么证明它"击败了 ChatGPT" / How I measured it
+
+The comparison is **controlled**: the same model (`deepseek-v4-pro`), with the harness on vs off, over 15 questions spanning cross-quarter, cross-company, single-metric, and annual queries. Everything is measured against an oracle — the deterministic extractor applied to each question's ground-truth spec, i.e. the correct answer.
+
+对比是**受控的**：同一模型（`deepseek-v4-pro`），harness 开 vs 关，15 道题（跨季度/跨公司/单指标/年度），都对比同一份 oracle——即确定性 extractor 按题目真值 spec 取出的正确答案。
+
+| Metric | agent | pipeline | bare LLM |
 |---|---|---|---|
-| Coverage (recall) / 覆盖率 | 100% | 100% | ~11% |
-| Precision (no extra values) / 精度 | 100% | 100% | — |
-| Provenance coverage / 溯源覆盖率 | 100% | 100% | 0% |
-| Intent accuracy / 意图准确率 | — | 100% | — |
-| Numbers the verifier caught / 被拦截数字 | 0 | 0 | all / 全部 |
+| Coverage (recall) | 100% | 100% | ~11% |
+| Precision (no extra wrong values) | 100% | 100% | — |
+| Provenance coverage | 100% | 100% | 0% |
+| Intent accuracy | — | 100% | — |
+| Numbers the verifier caught | 0 | 0 | (all) |
+
+The two numbers I'd point to in an interview: **coverage *and* precision, together.** Coverage alone is flattering — it would have missed the ticker-leak bug (fetching the right numbers *plus* an extra wrong company), which precision caught. And the bare LLM's ~11% is telling: it's a handful of memorized figures for famous companies, zero on everything else. The harness is 100% every time because it's deterministic, and 100% of its numbers are traceable.
+
+面试时我会指出的两个数字：**coverage 和 precision 要一起看**。只测 coverage 是讨好的——它会漏掉"答对了又答多了"（ticker 泄漏 bug 就是这么被 precision 抓到的）。而裸 LLM 的 ~11% 很能说明问题：那是对知名公司的几个背下来的数字，其余全是 0。harness 每次 100%，因为它是确定性的，而且每个数字都可溯源。
 
 ```bash
 .venv/bin/python -m eval.run_eval                  # pipeline (LLM intent + summary)
 .venv/bin/python -m eval.run_eval --mode agent     # agent mode
 .venv/bin/python -m eval.run_eval --baseline       # + bare-LLM baseline
-.venv/bin/python -m eval.run_eval --baseline --limit 5   # quick subset
 ```
 
-Coverage and precision are reported together because **coverage alone misses "right answer plus extra wrong ones"** (a ticker leak). The bare LLM's ~11% is a few memorized figures; the harness is deterministic, so 100% with full provenance. The metric is strict (±1% on exact figures), so "around $100B" scores 0 — analysts need exact, traceable numbers.
-**coverage 和 precision 要一起看**——只测 coverage 会漏掉"答对了又答多了"。裸 LLM 的 ~11% 是蒙对知名数字，其余 0%；harness 确定性抓取，每次 100% 且可溯源。指标按 ±1% 精确匹配。
+## 诚实的局限 / Honest limitations
 
-## 项目结构 / Project Layout
+- **Fiscal Q4 across the calendar-year boundary** — companies whose fiscal year straddles Dec 31 (NVIDIA ends late January) sometimes have no discrete Q4 flow fact; provenance's start/end dates always disambiguate. / 财年跨自然年的公司（英伟达 1 月底结束）有时缺单独的 Q4 期间型 fact；起止日期始终可消歧。
+- **Cross-company quarter misalignment** — companies have different fiscal year-ends, so "Q2 FY2026" isn't the same calendar period for NVDA and AMD; the table keeps each company's columns separate rather than conflating them. / 不同公司财年结束月不同，"Q2 FY2026"对 NVDA 和 AMD 不是同一日历区间；对比表按各自日期分列，不强行对齐。
+- **Attribution is line-granular** — a swapped pair of numbers inside one line isn't caught; finer detection would need clause-level splitting. / 归属校验是行粒度，一行内两个数字对调分辨不出，更细要拆到从句级。
+- **Deterministic ticker parsing** — single-letter tickers ("V") or tickers that are also financial words ("CASH", "NET") need the full name or the watchlist. / 单字符 ticker 或与金融词重合的 ticker（"CASH"/"NET"）需用全名或加入 watchlist。
+
+## 项目结构 / Project layout
 
 ```
 src/agent/
-  analyst.py     Analyst: mode dispatch (pipeline vs agent) / 模式分发
-  pipeline.py    pipeline mode: deterministic orchestration / 确定性编排
-  agent_loop.py  agent mode: LLM tool-call loop + in-loop verify / 工具循环+循环内校验
-  extractor.py   deterministic extraction (shared; correctness core) / 确定性抓取
-  verifier.py    fabrication + attribution checks / 校验：编造+归属
-  edgar.py       SEC EDGAR client / SEC 客户端
+  analyst.py     Analyst: dispatches pipeline vs agent
+  pipeline.py    pipeline mode: deterministic orchestration
+  agent_loop.py  agent mode: LLM tool-call loop + in-loop verifier
+  extractor.py   deterministic extraction (shared; the correctness core)
+  verifier.py    fabrication + attribution checks
+  edgar.py       SEC EDGAR client (rate-limited, cached, builds filing URLs)
   schema.py      Provenance / Fact / QueryIntent / Answer
-  metrics.py     metric → XBRL tag synonym registry / 指标映射
-  skills.py      analyst recipes (builtin + user YAML) / 分析师配方
-  profile.py     user preference memory / 用户记忆
-  table.py       terminal table + xlsx/csv export / 导出
+  metrics.py     metric → XBRL-tag synonym registry
+  skills.py      analyst recipes (built-in + user YAML)
+  profile.py     user preference memory (3 JSON files)
+  table.py       terminal table + xlsx/csv export
   llm.py         provider-agnostic LLM (anthropic/openai/deepseek)
-  cli.py         CLI entry / 入口
-eval/            questions, oracle, runner, metrics / 评测
-tests/           64 tests / 64 个测试
+  cli.py         CLI entry point
+eval/            questions, oracle, runner, metrics
+tests/           64 tests
 ```
-
-## 已知限制 / Known Limitations
-
-- **Fiscal Q4 across the calendar-year boundary** — companies whose fiscal year straddles Dec 31 (NVDA ends late January) may lack a discrete Q4 flow fact; provenance's start/end dates always disambiguate. / 财年跨自然年的公司（NVDA 财年 1 月底结束）有时缺单独的 Q4 期间型 fact。
-- **Cross-company quarter misalignment** — different fiscal year-ends; the table keeps each company's periods in separate columns rather than conflating them. / 不同公司财年结束月不同，对比表按各自精确日期分列。
-- **Companies that don't file a tag** — e.g. AMD files `LiabilitiesAndStockholdersEquity` but not `Liabilities`; the harness returns "no data" rather than a wrong number. / 如 AMD 不单独披露 `Liabilities`，harness 返回"无数据"而非用错数。
-- **Deterministic ticker parsing** — filters common English/financial words; single-letter tickers ("V") or tickers that are also financial words ("CASH", "NET") need the full name or the watchlist. / 单字符 ticker 或与金融词重合的 ticker 需用全名或加入 watchlist。
-- **Attribution check is line-granular** — a swapped pair of numbers inside one line isn't caught; finer detection needs clause-level splitting. / 归属校验是行粒度，一行内多公司多数字的对调分辨不出。
