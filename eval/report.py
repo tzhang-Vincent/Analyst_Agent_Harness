@@ -11,9 +11,9 @@ class EvalRow:
     category: str
     oracle_values: int
     intent_ok: bool | None = None  # None = N/A (agent mode has no explicit intent)
-    harness_coverage: float = 1.0  # recall: are all oracle values present?
+    harness_coverage: float | None = 1.0  # None = N/A (open-ended question)
     harness_provenance: float = 1.0
-    harness_precision: float = 1.0  # are all harness values actually in oracle?
+    harness_precision: float | None = 1.0  # None = N/A (open-ended question)
     hallucinations: int = 0      # unsupported numbers the verifier caught & removed
     baseline_coverage: float | None = None
 
@@ -70,11 +70,13 @@ def summarize(rows: list[EvalRow]) -> dict:
         }
     base = [r.baseline_coverage for r in rows if r.baseline_coverage is not None]
     intents = [r.intent_ok for r in rows if r.intent_ok is not None]
+    covs = [r.harness_coverage for r in rows if r.harness_coverage is not None]
+    precs = [r.harness_precision for r in rows if r.harness_precision is not None]
     return {
         "questions": n,
         "intent_accuracy": (sum(1 for i in intents if i) / len(intents)) if intents else None,
-        "harness_accuracy": sum(r.harness_coverage for r in rows) / n,
-        "harness_precision": sum(r.harness_precision for r in rows) / n,
+        "harness_accuracy": (sum(covs) / len(covs)) if covs else None,
+        "harness_precision": (sum(precs) / len(precs)) if precs else None,
         "harness_provenance": sum(r.harness_provenance for r in rows) / n,
         "hallucinations": sum(r.hallucinations for r in rows),
         "baseline_accuracy": (sum(base) / len(base)) if base else None,

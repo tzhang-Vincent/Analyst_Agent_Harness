@@ -99,8 +99,11 @@ def main(argv: list[str] | None = None) -> None:
             answer = analyst.run(q.text)
             values = [f.provenance.value for f in answer.facts]
             iok = _intent_ok(analyst.last_intent, q) if show_intent else None
-            hcov = value_coverage(values, oracle_values)
-            hprec = value_precision(values, oracle_values)
+            if q.open_ended:
+                hcov = hprec = None  # no single "correct" spec; only provenance+hallucination matter
+            else:
+                hcov = value_coverage(values, oracle_values)
+                hprec = value_precision(values, oracle_values)
             prov = provenance_coverage(answer.facts)
             halluc = answer.summary.count("[unverified]")
 
@@ -111,9 +114,9 @@ def main(argv: list[str] | None = None) -> None:
             rows.append(
                 EvalRow(q.id, q.category, len(oracle_values), iok, hcov, prov, hprec, halluc, bcov)
             )
+            cov_str = f"coverage={hcov * 100:.0f}% precision={hprec * 100:.0f}%" if hcov is not None else "(open-ended)"
             line = (
-                f"[{q.id}] coverage={hcov * 100:.0f}% precision={hprec * 100:.0f}% "
-                f"prov={prov * 100:.0f}% halluc={halluc}"
+                f"[{q.id}] {cov_str} prov={prov * 100:.0f}% halluc={halluc}"
                 + (f" bare_llm={bcov * 100:.0f}%" if bcov is not None else "")
             )
             print(line, flush=True)
@@ -135,7 +138,8 @@ def main(argv: list[str] | None = None) -> None:
         if show_intent:
             row.append("ok" if r.intent_ok else "BAD")
         row += [
-            f"{r.harness_coverage * 100:.0f}%", f"{r.harness_precision * 100:.0f}%",
+            f"{r.harness_coverage * 100:.0f}%" if r.harness_coverage is not None else "—",
+            f"{r.harness_precision * 100:.0f}%" if r.harness_precision is not None else "—",
             f"{r.harness_provenance * 100:.0f}%", str(r.hallucinations),
         ]
         if args.baseline and llm is not None:
@@ -147,9 +151,11 @@ def main(argv: list[str] | None = None) -> None:
     parts = []
     if s["intent_accuracy"] is not None:
         parts.append(f"intent [green]{s['intent_accuracy'] * 100:.0f}%[/green]")
+    if s["harness_accuracy"] is not None:
+        parts.append(f"coverage [green]{s['harness_accuracy'] * 100:.0f}%[/green]")
+    if s["harness_precision"] is not None:
+        parts.append(f"precision [green]{s['harness_precision'] * 100:.0f}%[/green]")
     parts += [
-        f"coverage [green]{s['harness_accuracy'] * 100:.0f}%[/green]",
-        f"precision [green]{s['harness_precision'] * 100:.0f}%[/green]",
         f"provenance [green]{s['harness_provenance'] * 100:.0f}%[/green]",
         f"hallucinations caught [green]{s['hallucinations']}[/green]",
     ]
