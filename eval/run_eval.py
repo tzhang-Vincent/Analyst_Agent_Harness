@@ -31,6 +31,7 @@ from agent.llm import LLM, is_configured
 from agent.profile import Memory
 from agent.verifier import extract_numbers
 
+from .dialogues import DIALOGUES
 from .ground_truth import build_oracle
 from .questions import QUESTIONS
 from .report import EvalRow, provenance_coverage, summarize, value_coverage, value_precision
@@ -62,6 +63,61 @@ def _intent_ok(intent, q) -> bool:
     )
 
 
+def _run_dialogues(llm: LLM | None) -> None:
+    """Multi-turn conversation eval: per-turn coverage/precision/provenance/hallucination.
+
+    Reference resolution is measured indirectly: a turn's oracle encodes the
+    *correct* resolution (e.g. "compare it with AMD" -> ["NVDA", "AMD"]), so a
+    mis-resolved reference fetches the wrong data and drops coverage/precision.
+    """
+    if llm is None:
+        console.print("[red]--chat needs an LLM key.[/red]")
+        return
+
+    covs: list[float] = []
+    precs: list[float] = []
+    provs: list[float] = []
+    hallus: list[int] = []
+    resolved = 0
+    total = 0
+
+    with EdgarClient() as client:
+        analyst = Analyst(client=client, memory=Memory("data/eval_memory"), llm=llm, mode="agent")
+        for dialogue in DIALOGUES:
+            history: list[dict] = []
+            for i, turn in enumerate(dialogue.turns, 1):
+                answer = analyst.run(turn.text, history=history)
+                oracle_values = [o.value for o in build_oracle(client, turn)]
+                values = [f.provenance.value for f in answer.facts]
+                hcov = value_coverage(values, oracle_values)
+                hprec = value_precision(values, oracle_values)
+                prov = provenance_coverage(answer.facts)
+                halluc = answer.summary.count("[unverified]")
+                covs.append(hcov)
+                precs.append(hprec)
+                provs.append(prov)
+                hallus.append(halluc)
+                total += 1
+                if hcov >= 1.0 and hprec >= 1.0:
+                    resolved += 1
+                print(
+                    f"[{dialogue.id} t{i}] coverage={hcov * 100:.0f}% "
+                    f"precision={hprec * 100:.0f}% prov={prov * 100:.0f}% halluc={halluc}",
+                    flush=True,
+                )
+                history.append({"role": "user", "content": turn.text})
+                history.append({"role": "assistant", "content": answer.summary})
+
+    console.print(
+        f"\n[b]Dialogue summary[/b]: {total} turns — "
+        f"coverage {sum(covs) / total * 100:.0f}%, "
+        f"precision {sum(precs) / total * 100:.0f}%, "
+        f"provenance {sum(provs) / total * 100:.0f}%, "
+        f"hallucinations {sum(hallus)}, "
+        f"reference-resolved turns {resolved}/{total} ({resolved / total * 100:.0f}%)"
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--baseline", action="store_true",
@@ -72,6 +128,8 @@ def main(argv: list[str] | None = None) -> None:
                    help="pipeline = deterministic orchestration; agent = LLM tool loop.")
     p.add_argument("--no-llm-intent", action="store_true",
                    help="(pipeline only) use rule intent parsing instead of the LLM.")
+    p.add_argument("--chat", action="store_true",
+                   help="run the multi-turn conversation eval (agent mode).")
     p.add_argument("--provider", choices=["anthropic", "openai", "deepseek"])
     p.add_argument("--model")
     args = p.parse_args(argv)
@@ -79,6 +137,10 @@ def main(argv: list[str] | None = None) -> None:
     llm: LLM | None = LLM(args.provider, args.model) if is_configured(args.provider) else None
     if llm is None:
         console.print("[yellow]No LLM key configured; harness runs deterministic (no LLM).[/yellow]")
+
+    if args.chat:
+        _run_dialogues(llm)
+        return
 
     questions = QUESTIONS if args.limit is None else QUESTIONS[: args.limit]
     show_intent = args.mode == "pipeline"
