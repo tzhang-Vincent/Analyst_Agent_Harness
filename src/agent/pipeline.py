@@ -288,8 +288,8 @@ class PipelineRunner:
                         f"{last.period_label} [{idx}]"
                     )
         body = "\n".join(lines) if lines else "(no data found)"
-        src = "\n".join(f"[{i}] {u}" for i, u in enumerate(citations, 1))
-        return f"Summary:\n{body}\n\nSources:\n{src}", citations
+        # Sources are rendered separately (clickable) from the citations list.
+        return f"Summary:\n{body}", citations
 
     def _summarize_llm(self, intent, facts_by_company) -> tuple[str, list[str]]:
         citations: list[str] = []
@@ -315,8 +315,7 @@ class PipelineRunner:
             [{"role": "system", "content": system}, {"role": "user", "content": user}]
         )
         summary = resp.get("content") or "(no summary produced)"
-        src = "\n".join(f"[{i}] {u}" for i, u in enumerate(citations, 1))
-        return f"{summary}\n\nSources:\n{src}", citations
+        return summary, citations
 
     def _remember(self, intent: QueryIntent, query: str) -> None:
         self.memory.add_tickers(intent.tickers)

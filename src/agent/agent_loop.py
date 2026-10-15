@@ -13,6 +13,7 @@ this loop talks the Anthropic Messages API directly (the default provider).
 from __future__ import annotations
 
 import json
+import os
 
 from .edgar import EdgarClient
 from .extractor import extract_metrics
@@ -132,7 +133,10 @@ def run_agent_loop(llm, client: EdgarClient, query: str) -> tuple[str, list[Fact
     """Run the tool-calling loop; return ``(final_text, facts)``."""
     import anthropic
 
-    aclient = anthropic.Anthropic(base_url=llm.base_url or None)
+    aclient = anthropic.Anthropic(
+        base_url=llm.base_url or None,
+        api_key=os.environ.get("ANTHROPIC_API_KEY"),
+    )
     messages: list[dict] = [{"role": "user", "content": query}]
     all_facts: list[Fact] = []
     final_text = ""

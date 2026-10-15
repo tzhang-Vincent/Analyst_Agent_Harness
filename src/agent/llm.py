@@ -21,7 +21,9 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-load_dotenv()  # pick up .env (API keys, provider, model, base URL) if present
+# override=True so .env wins over any inherited env (e.g. an ANTHROPIC_API_KEY
+# injected by the IDE/CLI that would otherwise shadow the .env key).
+load_dotenv(override=True)
 
 PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic")
 MODEL = os.environ.get("LLM_MODEL", "deepseek-v4-pro")
@@ -124,7 +126,10 @@ class LLM:
 
         if not is_configured("anthropic"):
             raise LLMError("ANTHROPIC_API_KEY is not set")
-        client = anthropic.Anthropic(base_url=self.base_url or None)
+        client = anthropic.Anthropic(
+            base_url=self.base_url or None,
+            api_key=os.environ.get("ANTHROPIC_API_KEY"),
+        )
 
         system = "\n".join(
             m["content"] for m in messages if m["role"] == "system"

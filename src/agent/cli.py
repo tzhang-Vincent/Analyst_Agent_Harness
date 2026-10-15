@@ -43,6 +43,13 @@ def main(argv: list[str] | None = None) -> None:
     answer = analyst.run(args.query)
 
     console.print(answer.summary)
+
+    # Render the provenance sources as clickable links (OSC 8) in the terminal.
+    if answer.citations:
+        console.print("\n[bold]Sources[/bold] (clickable)")
+        for i, url in enumerate(answer.citations, 1):
+            console.print(f"  [{i}] [link={url}]{url}[/link]")
+
     if answer.facts:
         console.print()
         console.print(render_terminal(group_facts(answer.facts), title="Comparison"))
